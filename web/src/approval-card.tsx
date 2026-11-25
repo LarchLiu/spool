@@ -166,12 +166,14 @@ export function ApprovalCard({
   turnID,
   t,
   onError,
+  onDecision,
 }: {
   request: ApprovalRequest;
   chatID: string;
   turnID: string;
   t: Translator;
   onError: (error: unknown) => void;
+  onDecision?: (input: Record<string, unknown>) => Promise<unknown>;
 }) {
   const [sending, setSending] = useState(false);
   const [resolved, setResolved] = useState(false);
@@ -216,7 +218,7 @@ export function ApprovalCard({
           : approvalContent(fields, data)
         : undefined;
       setSending(true);
-      await api(`/chats/${chatID}/approvals`, {
+      const input = {
         id: request.id,
         turn_id: turnID,
         allow,
@@ -225,7 +227,9 @@ export function ApprovalCard({
         feedback: request.feedback
           ? String(data.get("spool-decision-feedback") ?? "")
           : undefined,
-      });
+      };
+      if (onDecision) await onDecision(input);
+      else await api(`/chats/${chatID}/approvals`, input);
       setResolved(true);
     } catch (error) {
       onError(error);

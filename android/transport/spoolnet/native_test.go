@@ -680,13 +680,13 @@ func TestNativeMultipartUpload(t *testing.T) {
 		}
 		defer file.Close()
 		data, _ := io.ReadAll(file)
-		if r.FormValue("message") != "hello" || header.Filename != "note.txt" || string(data) != "contents" {
+		if r.FormValue("message") != "hello" || r.FormValue("mcp_servers") != `["spool_federation"]` || header.Filename != "note.txt" || string(data) != "contents" {
 			t.Error("multipart fields corrupted")
 		}
 		w.Header().Set("Content-Type", "application/json")
 		io.WriteString(w, `{"id":"chat"}`)
 	})
-	payload, _ := json.Marshal(map[string]any{"fields": map[string]string{"message": "hello"}, "files": []map[string]string{{"name": "note.txt", "data": base64.StdEncoding.EncodeToString([]byte("contents"))}}})
+	payload, _ := json.Marshal(map[string]any{"fields": map[string]string{"message": "hello", "mcp_servers": `["spool_federation"]`}, "files": []map[string]string{{"name": "note.txt", "data": base64.StdEncoding.EncodeToString([]byte("contents"))}}})
 	if _, err := client.Upload("chat", string(payload), "csrf", "en"); err != nil {
 		t.Fatal(err)
 	}

@@ -192,6 +192,14 @@ func (p *agentProcess) runCodex(ctx context.Context, request AgentRequest, emit 
 			params["sandbox"], params["approvalPolicy"], params["ephemeral"] = "read-only", "never", true
 			params["baseInstructions"] = request.SystemPrompt
 		}
+		if request.MCP != nil && !request.SummaryOnly {
+			params["config"] = map[string]any{
+				"mcp_servers.spool_federation.url":              request.MCP.URL,
+				"mcp_servers.spool_federation.env_http_headers": map[string]string{"Authorization": "SPOOL_AGENT_MCP_AUTHORIZATION"},
+				"mcp_servers.spool_federation.enabled":          true,
+				"mcp_servers.spool_federation.tool_timeout_sec": 45,
+			}
+		}
 		if request.Model != "" {
 			params["model"] = request.Model
 		}

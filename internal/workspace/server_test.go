@@ -28,6 +28,7 @@ type fakeRunner struct {
 }
 
 type gatedRunner struct {
+	fakeRunner
 	started chan struct{}
 	release chan struct{}
 }

@@ -36,7 +36,14 @@ type AgentRequest struct {
 	// SummaryOnly uses a fresh, non-persistent session with no write grants.
 	SummaryOnly  bool
 	SystemPrompt string
+	MCP          *MCPServer
 }
+
+// MCPServer is an application-owned local capability. Its token stays the same
+// for a chat's user across turns, so the persistent CLI is not restarted for
+// each message; the application honors it only while that user's turn runs. It
+// is not persisted to the user's CLI configuration or provider transcript.
+type MCPServer struct{ URL, Token string }
 
 // AgentEvent types: session, turn, model, delta, message, retract, part,
 // activity, compaction, tool (a call already shown, now with its outcome),

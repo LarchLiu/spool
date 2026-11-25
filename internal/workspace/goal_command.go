@@ -22,7 +22,7 @@ func validateGoalInput(input messageInput) error {
 	if len(input.files) > 0 {
 		return fmt.Errorf("Goal commands do not accept attachments")
 	}
-	if command.Action != "set" {
+	if command.Action != "set" && !input.allowGoalControl {
 		return fmt.Errorf("Use the native goal control endpoint to view or clear a goal")
 	}
 	return nil

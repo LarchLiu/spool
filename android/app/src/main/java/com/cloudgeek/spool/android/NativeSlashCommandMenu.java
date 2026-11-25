@@ -29,15 +29,20 @@ final class NativeSlashCommandMenu extends LinearLayout {
         if (command.skill() && !source.getText().toString().isEmpty()) {
             LayoutParams provenance = new LayoutParams(-2, -2); provenance.leftMargin = ui.dp(9); addView(source, provenance);
         }
+        if (command.next) {
+            LayoutParams arrow = new LayoutParams(ui.dp(14), ui.dp(14)); arrow.leftMargin = ui.dp(6);
+            addView(ui.decorativeIcon("chevron-right", 14), arrow);
+        }
         setFocusable(true); setActive(selected);
-        setContentDescription("/" + command.name + (command.argumentHint.isEmpty() ? "" : " " + command.argumentHint)
+        setEnabled(command.enabled); setAlpha(command.enabled ? 1 : .45f);
+        setContentDescription((command.local ? command.displayName : "/" + command.name) + (command.argumentHint.isEmpty() ? "" : " " + command.argumentHint)
                 + ": " + detail.getText() + (source.getText().length() == 0 ? "" : ", " + source.getText()));
         setAccessibilityDelegate(new View.AccessibilityDelegate() {
             @Override public void onInitializeAccessibilityNodeInfo(View view, android.view.accessibility.AccessibilityNodeInfo info) {
                 super.onInitializeAccessibilityNodeInfo(view, info); info.setClassName("android.widget.Button"); info.setSelected(isSelected());
             }
         });
-        setOnClickListener(view -> select.run()); ui.buttonKeys(this);
+        setOnClickListener(view -> { if (isEnabled()) select.run(); }); ui.buttonKeys(this);
     }
 
     private TextView label(String value, int size, int color) {

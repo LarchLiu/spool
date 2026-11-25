@@ -144,6 +144,30 @@ func TestCodexHistoryDoesNotSplitRootResponseAcrossNativePages(t *testing.T) {
 	}
 }
 
+func TestCodexHistoryLimitedPageKeepsRootResponseIntact(t *testing.T) {
+	store := testStore(t)
+	turns := []agent.CodexHistoryTurn{{ID: "older", RootID: "older", Status: chatmodel.StatusCompleted}}
+	turns = append(turns, codexReviewTurns()...)
+	reader := &responseHistory{turns: turns}
+	chat, _ := nativeCodexChat(t, store, reader)
+	// A one-turn native page starts with the final root record. Its process
+	// records must still be included without consuming an unrelated response.
+	page, err := store.codexHistoryPageWithLimit(t.Context(), chat, nativeHistoryCursor(chat.ID, strconv.Itoa(len(turns))), 1)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(page.Turns) != 1 || page.Turns[0].NativeTurnID != "review-root" || page.Turns[0].Reply != "Review complete." || len(page.Turns[0].Parts) != 4 {
+		t.Fatalf("limited page split the response: %+v", page.Turns)
+	}
+	if page.History == nil || page.History.Before != nativeHistoryCursor(chat.ID, "1") {
+		t.Fatalf("limited page lost its native cursor: %+v", page.History)
+	}
+	page, err = store.codexHistoryPageWithLimit(t.Context(), chat, page.History.Before, 1)
+	if err != nil || len(page.Turns) != 1 || page.Turns[0].NativeTurnID != "older" || page.History.HasMore {
+		t.Fatalf("limited page skipped the preceding response: %+v %v", page, err)
+	}
+}
+
 func TestCodexResponseKeepsRootSettingsAndOpensWithItsInput(t *testing.T) {
 	store := testStore(t)
 	path := filepath.Join(t.TempDir(), "rollout.jsonl")

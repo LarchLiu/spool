@@ -52,6 +52,8 @@ import { DesktopServerWelcome } from "./desktop-servers";
 import { DesktopWindowChrome } from "./desktop-window-chrome";
 import { LoginStory } from "./login-story";
 import { ComposerSendButton } from "./composer-send-button";
+import { RemoteCalls, RemoteTargetChip, RemoteTargetMenu, useRemoteAgents } from "./remote-agents";
+import { mcpCommand, MCPChips, MCPMenu, useComposerMCP } from "./composer-mcp";
 import { DeliveryStatus, deliveryReceipt, type LocalDelivery } from "./message-delivery";
 import {
   composerEnterAction,
@@ -1288,6 +1290,17 @@ function App() {
     composerReady &&
     !!user &&
     (chat ? canControlChat(chat, user.id) : canCreate);
+  const remote = useRemoteAgents({
+    account: user?.id || "",
+    originChat: chatID,
+    scope: JSON.stringify([project, draftVersion]),
+    enabled: composerWritable && !!user && !user.source_server_id,
+    draft,
+    focused: commandFocused,
+    disabled: !composerWritable || posting,
+    onDraft: setDraft,
+    onError: fail,
+  });
   const draftGoal = parseGoalCommand(draft);
   const hasDraft = !!draft.trim() || !!files.length;
   const activeTurn = runningTurn(chat);
@@ -1305,11 +1318,28 @@ function App() {
     project,
     chatID,
     backend,
-    !!user && composerWritable && selectedAvailable,
+    !!user && composerWritable && selectedAvailable && !remote.target,
     chat?.backend === backend ? chat.permission_mode : undefined,
   );
-  const agentCommands =
-    permissions.catalog?.commands || selectedAgent?.catalog.commands || [];
+  const mcp = useComposerMCP({
+    scope: JSON.stringify([user?.id, project, draftVersion]),
+    chatID,
+    draft,
+    focused: commandFocused,
+    enabled: composerWritable && !remote.target,
+    disabled: posting || chat?.status === "running",
+    available: user?.source_server_id
+      ? false
+      : remote.serversLoaded
+        ? !!remote.servers.length
+        : undefined,
+    onDraft: setDraft,
+  });
+  const agentCommands = useMemo(
+    () => [mcpCommand, ...(permissions.catalog?.commands || selectedAgent?.catalog.commands || [])
+      .filter(command => command.name !== "mcp")],
+    [permissions.catalog?.commands, selectedAgent?.catalog.commands],
+  );
   const suggestions = useMemo(
     () => commandSuggestions(draft, agentCommands),
     [draft, agentCommands],
@@ -1323,6 +1353,9 @@ function App() {
         )
       : 0;
   const commandOpen =
+    !remote.target &&
+    !remote.open &&
+    !mcp.open &&
     composerWritable &&
     commandFocused &&
     !posting &&
@@ -1477,7 +1510,8 @@ function App() {
   }
   function selectCommand(command = suggestions?.[commandIndex]) {
     if (!command) return;
-    setDraft(`/${command.name} `);
+    if (command.name === "mcp") mcp.show();
+    else setDraft(`/${command.name} `);
     setCommandDismissed(false);
     requestAnimationFrame(() =>
       document.getElementById("chat-message")?.focus(),
@@ -1590,6 +1624,7 @@ function App() {
           ...old.filter((item) => item.id !== target!.id),
         ]);
         permissions.adoptChat(target.id);
+        mcp.adoptChat(target.id);
         adoptedChatID.current = target.id;
         activeID.current = target.id;
         origin.chatID = target.id;
@@ -1685,6 +1720,58 @@ function App() {
       setPosting(false);
     }
   }
+  async function sendRemote() {
+    if (!remote.target || !remote.ready || !composerWritable || !draft.trim() || posting || submission.current || remote.busy || preparingFiles) return;
+    if (files.length) {
+      fail(new Error(t("Remote calls currently accept text only")));
+      return;
+    }
+    submission.current = true;
+    setPosting(true);
+    setError("");
+    const message = draft, owner = user?.id, origin = selection.current;
+    let id = chatID, created: Chat | undefined;
+    const isCurrent = () => activeUser.current === owner && selection.current.project === origin.project && selection.current.chatID === origin.chatID && selection.current.draftVersion === origin.draftVersion;
+    try {
+      if (!id) {
+        created = await api<Chat>("/chats", { project_id: project, backend });
+        id = created.id;
+      }
+      if (!isCurrent()) return;
+      await remote.send(message, id);
+      if (isCurrent()) setDraft(value => value === message ? "" : value);
+    } catch (error) {
+      if (isCurrent()) fail(error);
+    } finally {
+      if (created && activeUser.current === owner) {
+        const adopted = created;
+        setChats(old => [adopted, ...old.filter(item => item.id !== adopted.id)]);
+        if (isCurrent()) {
+          remote.adoptOrigin(id);
+          permissions.adoptChat(id);
+          mcp.adoptChat(id);
+          adoptedChatID.current = id;
+          activeID.current = id;
+          selection.current = { ...origin, chatID: id };
+          setChat(created);
+          setChatID(id);
+          setSidebar(false);
+        }
+      }
+      submission.current = false;
+      setPosting(false);
+    }
+  }
+  function useRemoteContext(text: string) {
+    const next = [draft, text].filter(Boolean).join("\n\n");
+    if (new TextEncoder().encode(next).length > 131072) {
+      fail(new Error(t("Message and remote result exceed the message limit.")));
+      return;
+    }
+    remote.clearTarget();
+    setDraft(next);
+    requestAnimationFrame(() => document.getElementById("chat-message")?.focus());
+  }
   async function send() {
     if (
       !composerWritable ||
@@ -1699,6 +1786,10 @@ function App() {
       return;
     const command = parseGoalCommand(draft);
     const slash = parseSlashCommand(draft);
+    if (slash?.name.toLowerCase() === "mcp") {
+      mcp.show();
+      return;
+    }
     const definition = slash
       ? findSlashCommand(agentCommands, slash.name)
       : undefined;
@@ -1796,6 +1887,7 @@ function App() {
         setChats((old) => [created, ...old.filter((c) => c.id !== id)]);
         if (stillCurrent) {
           permissions.adoptChat(id);
+          mcp.adoptChat(id);
           adoptedChatID.current = id;
           activeID.current = id;
           selection.current = { project: projectID, chatID: id, draftVersion };
@@ -1810,12 +1902,13 @@ function App() {
         model,
         reasoning_effort: effort,
         permission_mode: permissions.mode,
+        mcp_servers: mcp.selected,
       };
       let body: typeof payload | FormData = payload;
       if (attached.length) {
         body = new FormData();
         for (const [key, value] of Object.entries(payload))
-          body.set(key, value);
+          body.set(key, typeof value === "string" ? value : JSON.stringify(value));
         for (const file of attached) body.append("files", file.file, file.name);
       }
 
@@ -1829,6 +1922,7 @@ function App() {
         sending.chatID = id;
         if (stillCurrent) {
           permissions.adoptChat(id);
+          mcp.adoptChat(id);
           adoptedChatID.current = id;
           activeID.current = id;
           selection.current = { project: projectID, chatID: id, draftVersion };
@@ -1915,12 +2009,13 @@ function App() {
         permission_mode: permissions.mode,
         delivery,
         client_message_id: local.id,
+        mcp_servers: mcp.selected,
       };
       let body: typeof payload | FormData = payload;
       if (attached.length) {
         body = new FormData();
         for (const [key, value] of Object.entries(payload))
-          body.set(key, value);
+          body.set(key, typeof value === "string" ? value : JSON.stringify(value));
         for (const file of attached) body.append("files", file.file, file.name);
       }
       const v = await api<Chat>("/chats/" + id + "/messages", body);
@@ -1939,7 +2034,11 @@ function App() {
     }
   }
   function submitDraft(steer = false) {
-    if (activeTurn) void deliver(steer ? "steer" : "queue");
+    if (mcp.open) mcp.choose();
+    else if (/^\/mcp\s*$/i.test(draft) && !remote.target) mcp.show();
+    else if (remote.open) remote.select();
+    else if (remote.target) void sendRemote();
+    else if (activeTurn) void deliver(steer ? "steer" : "queue");
     else void send();
   }
   async function queueAction(
@@ -2158,9 +2257,10 @@ function App() {
     );
     waiting.postMessage({ type: "SKIP_WAITING" });
   }
-  const currentModel = models.find((m) => m.model === model);
+  const composerSelection = remote.target ? remote.selection : { backend, model, effort };
+  const currentModel = (remote.target ? remote.agents.find(item => item.backend === remote.selection.backend)?.catalog.models || [] : models).find((m) => m.model === composerSelection.model);
   useEffect(() => {
-    if (!currentModel) return;
+    if (!currentModel || remote.target) return;
     const supported = currentModel.supportedReasoningEfforts || [];
     if (!supported.length) {
       setEffort(
@@ -2699,6 +2799,7 @@ function App() {
                 );
               })
             )}
+            <RemoteCalls remote={remote} t={t} onError={fail} onContext={useRemoteContext} />
           </div>
         </div>
         <footer className="composer-wrap">
@@ -2725,7 +2826,7 @@ function App() {
               </button>
             </div>
           )}
-          {composerWritable && selectedAvailable && !activeTurn && (
+          {composerWritable && selectedAvailable && !activeTurn && !remote.target && (
             <PermissionStatus
               value={permissions}
               t={t}
@@ -2768,6 +2869,8 @@ function App() {
               submitDraft();
             }}
           >
+            {remote.open && <RemoteTargetMenu remote={remote} t={t} />}
+            {mcp.open && <MCPMenu mcp={mcp} t={t} />}
             {commandOpen && (
               <SlashCommandMenu
                 t={t}
@@ -2779,6 +2882,8 @@ function App() {
                 onSelect={selectCommand}
               />
             )}
+            <RemoteTargetChip remote={remote} t={t} />
+            {!remote.target && <MCPChips mcp={mcp} t={t} disabled={posting || chat?.status === "running"} />}
             {!!files.length && (
               <div className="composer-attachments">
                 <AttachmentCards
@@ -2798,10 +2903,10 @@ function App() {
               id="chat-message"
               aria-label={t("Message")}
               aria-haspopup="listbox"
-              aria-controls={commandOpen ? "slash-command-menu" : undefined}
-              aria-expanded={commandOpen}
+              aria-controls={mcp.open ? "mcp-menu" : remote.open ? "remote-target-menu" : commandOpen ? "slash-command-menu" : undefined}
+              aria-expanded={mcp.open || remote.open || commandOpen}
               aria-activedescendant={
-                commandOpen && suggestions?.length
+                mcp.open && mcp.rows.length ? `mcp-option-${mcp.index}` : remote.open && remote.rows.length ? `remote-target-${remote.index}` : commandOpen && suggestions?.length
                   ? `slash-command-${commandIndex}`
                   : undefined
               }
@@ -2810,12 +2915,12 @@ function App() {
                   ? t("Read-only")
                   : project
                     ? t("Message {agent}", {
-                        agent: backend === "codex" ? "Codex" : "Claude",
+                        agent: (remote.target ? remote.selection.backend : backend) === "codex" ? "Codex" : "Claude",
                       })
                     : t("Waiting for project access")
               }
               value={draft}
-              disabled={!composerWritable || editingQueue}
+              disabled={!composerWritable || editingQueue || remote.busy}
               onPaste={(event) => pasteAttachments(event, addFiles)}
               onChange={(e) => {
                 composerHistory.reset();
@@ -2832,10 +2937,13 @@ function App() {
               }}
               onKeyDown={(e) => {
                 if (inputMethodKey(e.nativeEvent)) return;
+                if (mcp.onKeyDown(e)) return;
+                if (remote.onKeyDown(e)) return;
                 if (
                   commandOpen &&
                   !!suggestions?.length &&
                   (e.key === "Tab" ||
+                    (e.key === "ArrowRight" && suggestions[commandIndex]?.name === "mcp") ||
                     (e.key === "Enter" &&
                       !e.metaKey &&
                       !e.altKey &&
@@ -2866,7 +2974,7 @@ function App() {
                   setCommandDismissed(true);
                   return;
                 }
-                if (composerHistory.onKeyDown(e)) {
+                if (!remote.target && composerHistory.onKeyDown(e)) {
                   setCommandDismissed(true);
                   return;
                 }
@@ -2889,7 +2997,7 @@ function App() {
               }}
               maxLength={131072}
             />
-            {draftGoal && (
+            {draftGoal && !remote.target && (
               <div className="goal-command-hint">
                 {t("/goal <condition> · /goal to view · /goal clear to remove")}
               </div>
@@ -2913,12 +3021,12 @@ function App() {
                   className="icon attachment-add"
                   aria-label={t("Add files or images")}
                   title={t("Add files or images")}
-                  disabled={!composerWritable || posting || preparingFiles}
+                  disabled={!composerWritable || posting || preparingFiles || !!remote.target}
                   onClick={() => fileInput.current?.click()}
                 >
                   <Plus size={20} />
                 </button>
-                {project && (
+                {project && !remote.target && (
                   <PermissionPicker
                     backend={backend}
                     value={permissions}
@@ -2944,7 +3052,7 @@ function App() {
                       aria-expanded={picker}
                       disabled={
                         !composerWritable ||
-                        chat?.status === "running" ||
+                        (!remote.target && chat?.status === "running") ||
                         posting
                       }
                       onClick={() => {
@@ -2952,28 +3060,29 @@ function App() {
                         setPermissionOpen(false);
                       }}
                     >
-                      <AgentIcon backend={backend} size={14} />
+                      <AgentIcon backend={composerSelection.backend} size={14} />
                       <span>
-                        {currentModel?.displayName || model || t("CLI default")}
+                        {currentModel?.displayName || composerSelection.model || t("CLI default")}
                       </span>
-                      {effort && <span>· {effortLabel(effort)}</span>}
+                      {composerSelection.effort && <span>· {effortLabel(composerSelection.effort)}</span>}
                       <ChevronDown size={12} />
                     </button>
                     {picker && (
                       <AgentModelMenu
                         agents={
-                          canCreate || !chat
+                          remote.target ? remote.agents.filter(item => !remote.target?.conversation || item.backend === remote.selection.backend) : canCreate || !chat
                             ? agents
                             : agents.filter(
                                 (agent) => agent.backend === chat.backend,
                               )
                         }
-                        selection={{ backend, model, effort }}
+                        selection={composerSelection}
                         currentBackend={
-                          chat?.turns.length ? chat.backend : undefined
+                          remote.target ? remote.target.conversation ? remote.selection.backend : undefined : chat?.turns.length ? chat.backend : undefined
                         }
                         t={t}
                         onChange={(next) => {
+                          if (remote.target) { remote.setSelection(next); return; }
                           setBackend(next.backend);
                           setCommandDismissed(false);
                           setPermissionOpen(false);
@@ -2985,12 +3094,12 @@ function App() {
                   </div>
                 )}
                 <ComposerSendButton
-                  active={!!activeTurn && !hasDraft}
-                  stopping={stopping && !hasDraft}
+                  active={!remote.target && !!activeTurn && !hasDraft}
+                  stopping={!remote.target && stopping && !hasDraft}
                   t={t}
                   onStop={() => void stop()}
                   disabled={
-                    activeTurn
+                    remote.target ? !composerWritable || !remote.ready || !draft.trim() || !!files.length || posting || remote.busy || preparingFiles : activeTurn
                       ? !composerWritable ||
                         (hasDraft ? preparingFiles || delivering : stopping)
                       : !composerWritable ||

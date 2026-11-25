@@ -5104,3 +5104,89 @@ option {
 .server-action-spinner {
   animation: spin 1.1s linear infinite;
 }
+/* Remote targets are composer metadata, separate from the message text. */
+.remote-target-chip {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-wrap: wrap;
+  margin: 10px 14px 0;
+  color: var(--color-primary);
+  font-size: 12px;
+}
+.remote-target-chip > span {
+  max-width: 100%;
+  overflow-wrap: anywhere;
+}
+.remote-target-chip button {
+  font: inherit;
+}
+.remote-target-chip button:not(.icon), .remote-agent-actions button, .remote-agent-history > button {
+  padding: 5px 8px;
+  border: 1px solid var(--line);
+  border-radius: 7px;
+  background: var(--surface);
+  color: var(--text);
+  font: inherit;
+  font-size: 12px;
+  cursor: pointer;
+}
+.remote-target-chip button:not(.icon):hover, .remote-agent-actions button:hover, .remote-agent-history > button:hover {
+  background: var(--hover);
+}
+.remote-target-menu .remote-server-next {
+  margin-left: auto;
+}
+.remote-calls {
+  min-width: 0;
+  margin: 20px 0;
+}
+.slash-command-next { margin-left: auto; }
+.composer-mcp-chips { display: flex; flex-wrap: wrap; padding: 4px 12px; gap: 6px; }
+.composer-mcp-chip { display: inline-flex; align-items: center; gap: 5px; padding: 3px 7px; border-radius: 8px; background: var(--soft); font-size: 12px; }
+.remote-calls h3 {
+  font-size: 13px;
+  font-weight: 500;
+}
+.remote-calls p, .remote-calls small {
+  font-size: 12px;
+  line-height: 1.6;
+  overflow-wrap: anywhere;
+}
+.remote-agent-heading, .remote-agent-actions {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  flex-wrap: wrap;
+  font-size: 12px;
+  overflow-wrap: anywhere;
+}
+.remote-agent-actions {
+  justify-content: flex-end;
+  margin-top: 12px;
+}
+.remote-agent-actions button {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  font-size: 12px;
+}
+.remote-calls pre {
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+  font: inherit;
+  font-size: 13px;
+  line-height: 1.6;
+  max-height: 480px;
+  overflow: auto;
+}
+.remote-call-input {
+  padding: 0 12px;
+  border-radius: 10px;
+  background: var(--soft);
+}
+.remote-agent-task, .remote-agent-history article {
+  border-top: 1px solid var(--line);
+  padding: 14px 0;
+}

@@ -7,6 +7,7 @@ import (
 	"encoding/base64"
 	"encoding/hex"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"io"
 	"net"
@@ -147,14 +148,23 @@ func (a *App) authorizeMutation(w http.ResponseWriter, r *http.Request, id authI
 	return true
 }
 func decodeJSON(w http.ResponseWriter, r *http.Request, out any) bool {
+	return decodeJSONLimit(w, r, out, chatmodel.MaxMessageBytes+16384)
+}
+
+func decodeJSONLimit(w http.ResponseWriter, r *http.Request, out any, limit int64) bool {
 	if !strings.HasPrefix(r.Header.Get("Content-Type"), "application/json") {
 		apiError(w, 415, "Content-Type must be application/json")
 		return false
 	}
-	r.Body = http.MaxBytesReader(w, r.Body, chatmodel.MaxMessageBytes+16384)
+	r.Body = http.MaxBytesReader(w, r.Body, limit)
 	decoder := json.NewDecoder(r.Body)
 	decoder.DisallowUnknownFields()
 	if err := decoder.Decode(out); err != nil {
+		var tooLarge *http.MaxBytesError
+		if errors.As(err, &tooLarge) {
+			apiError(w, http.StatusRequestEntityTooLarge, "Request is too large")
+			return false
+		}
 		apiError(w, 400, "无效的 JSON 请求")
 		return false
 	}

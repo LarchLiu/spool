@@ -18,17 +18,24 @@ final class NativeAgentModelMenu extends LinearLayout {
     private final NativeUi ui;
     private JSONArray agents;
     private final String currentBackend;
+    private final boolean remote;
     private final Consumer<NativeModelSelection> change;
     private NativeModelSelection selection;
     final ScrollView catalog;
 
     NativeAgentModelMenu(NativeUi ui, JSONArray agents, NativeModelSelection selection,
             String currentBackend, Consumer<NativeModelSelection> change) {
+        this(ui, agents, selection, currentBackend, false, change);
+    }
+
+    NativeAgentModelMenu(NativeUi ui, JSONArray agents, NativeModelSelection selection,
+            String currentBackend, boolean remote, Consumer<NativeModelSelection> change) {
         super(ui.context);
         this.ui = ui;
         this.agents = agents;
         this.selection = selection;
         this.currentBackend = currentBackend;
+        this.remote = remote;
         this.change = change;
         setOrientation(VERTICAL);
         setPadding(ui.dp(15), ui.dp(17), ui.dp(15), ui.dp(15));
@@ -97,6 +104,10 @@ final class NativeAgentModelMenu extends LinearLayout {
             LinearLayout.LayoutParams headingParams = new LinearLayout.LayoutParams(-1, -2);
             headingParams.bottomMargin = ui.dp(7);
             groups.addView(heading, headingParams);
+            if (remote) {
+                JSONObject summary = agent.optJSONObject("summary");
+                if (summary != null && !summary.optString("text").isEmpty()) groups.addView(ui.text(summary.optString("text"), 11, ui.muted));
+            }
             List<JSONObject> models = new ArrayList<>();
             JSONObject data = agent.optJSONObject("catalog");
             JSONArray entries = data == null ? null : data.optJSONArray("models");
@@ -117,7 +128,14 @@ final class NativeAgentModelMenu extends LinearLayout {
                 row.setPadding(ui.dp(28), ui.dp(8), ui.dp(8), ui.dp(8));
                 row.setBackground(ui.states(active ? ui.selected : 0, 7, 0, ui.selected, 0));
                 TextView name = ui.text(entry.optString("displayName", id.isEmpty() ? ui.t("CLI default") : id), 12, ui.text);
-                row.addView(name, new LinearLayout.LayoutParams(0, -2, 1));
+                LinearLayout copy = ui.column();
+                if (remote) {
+                    copy.addView(name);
+                    JSONObject summary = entry.optJSONObject("summary");
+                    String description = summary == null ? entry.optString("description") : summary.optString("text", entry.optString("description"));
+                    if (!description.isEmpty()) copy.addView(ui.text(description, 11, ui.muted));
+                }
+                row.addView(remote ? copy : name, new LinearLayout.LayoutParams(0, -2, 1));
                 if (active) {
                     LinearLayout.LayoutParams check = new LinearLayout.LayoutParams(ui.dp(14), ui.dp(14));
                     check.setMarginStart(ui.dp(10));
@@ -175,7 +193,7 @@ final class NativeAgentModelMenu extends LinearLayout {
             addView(captions);
         } else note(ui.t("This model has no adjustable reasoning level."));
         note(ui.t("Applies to the next message. Context is preserved."));
-        note(ui.t(!currentBackend.isEmpty() && !currentBackend.equals(selection.backend)
+        if (!remote) note(ui.t(!currentBackend.isEmpty() && !currentBackend.equals(selection.backend)
                 ? "The next message creates a new chat with the selected agent and converted context."
                 : "Only sending with another agent creates a new chat. The original chat stays unchanged."));
     }

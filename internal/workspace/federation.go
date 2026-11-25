@@ -1,6 +1,7 @@
 package workspace
 
 import (
+	"bytes"
 	"context"
 	"crypto/ed25519"
 	"encoding/base64"
@@ -21,7 +22,14 @@ const (
 	federationVersion = 1
 	federationWindow  = 90 * time.Second
 	federationTimeout = 8 * time.Second
-	federationMaxBody = 8 << 10
+	// Delegation and permission discovery probe the native CLI on the target
+	// (up to 20 seconds) after it has redeemed the ticket. The caller must
+	// outlast that work, or it loses the task the target went on to start.
+	federationAgentSlowTimeout = 28 * time.Second
+	// A task query may stay open on the target for this many seconds.
+	federationAgentWaitSeconds = 5
+	federationMaxBody          = 8 << 10
+	federationWireMaxBody      = 768 << 10
 )
 
 const (
@@ -43,6 +51,7 @@ type federationMessage struct {
 	Subject   *federationSubject         `json:"subject,omitempty"`
 	Trust     *federationTrustRevocation `json:"trust,omitempty"`
 	Access    *federationUserAccess      `json:"access,omitempty"`
+	Agent     *federationAgentPayload    `json:"agent,omitempty"`
 	Signature string                     `json:"signature"`
 }
 
@@ -83,7 +92,12 @@ func (a *App) federationControl(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	var m federationMessage
-	dec := json.NewDecoder(http.MaxBytesReader(w, r.Body, federationMaxBody))
+	body, err := io.ReadAll(http.MaxBytesReader(w, r.Body, federationWireMaxBody))
+	if err != nil {
+		apiError(w, http.StatusForbidden, "Federation request refused")
+		return
+	}
+	dec := json.NewDecoder(bytes.NewReader(body))
 	dec.DisallowUnknownFields()
 	if err := dec.Decode(&m); err != nil || dec.Decode(new(any)) != io.EOF || m.Response || m.Active || m.Subject != nil || !m.fresh() || !federationSecret(m.Nonce) || !federationSecret(m.Value) {
 		apiError(w, http.StatusForbidden, "Federation request refused")
@@ -94,6 +108,10 @@ func (a *App) federationControl(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	if (m.Action == federationUserCheck || m.Action == federationUserRevoke) != (m.Access != nil) || m.Access != nil && (!chatmodel.ValidID(m.Access.Subject) || !federationSecret(m.Access.Grant)) {
+		apiError(w, http.StatusForbidden, "Federation request refused")
+		return
+	}
+	if (m.Action == federationAgentAction) != (m.Agent != nil) || m.Action != federationAgentAction && len(body) > federationMaxBody {
 		apiError(w, http.StatusForbidden, "Federation request refused")
 		return
 	}
@@ -116,6 +134,9 @@ func (a *App) federationControl(w http.ResponseWriter, r *http.Request) {
 	}
 	answer := federationMessage{Version: federationVersion, From: local.ID(), To: peer.ID, Action: m.Action, Nonce: m.Nonce, SentAt: time.Now().UnixMilli(), Response: true}
 	switch m.Action {
+	case federationAgentAction:
+		answer.Agent = a.receiveFederationAgent(r.Context(), peer, m.Value, *m.Agent)
+		answer.Active = true
 	case federationUserCheck:
 		allowed, err := a.store.federationUserAllowed(peer, *m.Access)
 		if err != nil {
@@ -166,6 +187,17 @@ func (a *App) federationControl(w http.ResponseWriter, r *http.Request) {
 	_, _ = w.Write(encoded)
 }
 
+// timeout bounds one control exchange by the work its receiver does in line.
+func (m federationMessage) timeout() time.Duration {
+	if m.Agent == nil {
+		return federationTimeout
+	}
+	if m.Agent.Operation == "delegate" || m.Agent.Operation == "permissions" {
+		return federationAgentSlowTimeout
+	}
+	return federationTimeout + time.Duration(min(max(m.Agent.Wait, 0), federationAgentWaitSeconds))*time.Second
+}
+
 func (a *App) federationCall(ctx context.Context, peer FederationPeer, action, value string) (federationMessage, error) {
 	return a.federationSend(ctx, peer, federationMessage{Action: action, Value: value})
 }
@@ -184,13 +216,13 @@ func (a *App) federationSend(ctx context.Context, peer FederationPeer, m federat
 	if a.federationDial == nil {
 		return answer, errors.New("federation transport unavailable")
 	}
-	ctx, cancel := context.WithTimeout(ctx, federationTimeout)
+	ctx, cancel := context.WithTimeout(ctx, m.timeout())
 	defer cancel()
 	data, err := a.federationDial(ctx, peer, body)
 	if err != nil {
 		return answer, err
 	}
-	if len(data) > federationMaxBody || json.Unmarshal(data, &answer) != nil || !answer.Response || !answer.fresh() || answer.To != local.ID() || answer.Nonce != m.Nonce || answer.Action != m.Action || answer.Value != "" || answer.Trust != nil || answer.Access != nil || !answer.signedBy(peer) {
+	if len(data) > federationWireMaxBody || m.Action != federationAgentAction && len(data) > federationMaxBody || json.Unmarshal(data, &answer) != nil || !answer.Response || !answer.fresh() || answer.To != local.ID() || answer.Nonce != m.Nonce || answer.Action != m.Action || answer.Value != "" || answer.Trust != nil || answer.Access != nil || (m.Action == federationAgentAction) != (answer.Agent != nil) || answer.Agent != nil && answer.Agent.Operation != m.Agent.Operation || !answer.signedBy(peer) {
 		return federationMessage{}, errors.New("invalid federation control response")
 	}
 	if !answer.Active {

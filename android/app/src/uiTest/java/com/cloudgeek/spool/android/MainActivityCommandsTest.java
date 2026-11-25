@@ -35,8 +35,13 @@ public class MainActivityCommandsTest {
 
     private String emptyMessage(MainActivityGoalTest.Harness h) {
         assertTrue(h.composer().commands.menu.isShowing());
-        assertTrue(h.composer().commands.options.isEmpty());
+        assertTrue(agentOptions(h).isEmpty());
+        assertTrue(h.composer().commands.options.stream().anyMatch(row -> row.title.getText().toString().equals("mcp")));
         return ((android.widget.TextView) h.composer().commands.menu.content.getChildAt(0)).getText().toString();
+    }
+
+    private List<NativeSlashCommandMenu> agentOptions(MainActivityGoalTest.Harness h) {
+        return h.composer().commands.options.stream().filter(row -> !row.title.getText().toString().equals("mcp")).toList();
     }
 
     @Test public void missingServerCatalogShowsUpgradeMessageAndRecoversWhenDevServerProvidesCommands() throws Exception {
@@ -57,8 +62,8 @@ public class MainActivityCommandsTest {
             MainActivityGoalTest.ShadowClient.response = response(200, modes());
             h.call("loadPermissions"); complete(h); h.composer().input.setText("/");
             Shadows.shadowOf(Looper.getMainLooper()).idle();
-            assertEquals(1, h.composer().commands.options.size());
-            assertEquals("Plan mode", h.composer().commands.options.get(0).title.getText().toString());
+            assertEquals(1, agentOptions(h).size());
+            assertEquals("Plan mode", agentOptions(h).get(0).title.getText().toString());
             commands(h, "[]"); Shadows.shadowOf(Looper.getMainLooper()).idle();
             assertEquals("No matching agent commands", emptyMessage(h));
         }
@@ -74,7 +79,7 @@ public class MainActivityCommandsTest {
             assertEquals("Could not load agent commands. Check project permissions and retry.", emptyMessage(h));
             catalog.put("commands", saved); h.call("updateComposer");
             Shadows.shadowOf(Looper.getMainLooper()).idle();
-            assertEquals(3, h.composer().commands.options.size());
+            assertEquals(3, agentOptions(h).size());
         }
     }
 
@@ -82,16 +87,16 @@ public class MainActivityCommandsTest {
         try (MainActivityGoalTest.Harness h = new MainActivityGoalTest.Harness(true)) {
             h.composer().input.requestFocus(); h.composer().input.setText("/");
             Shadows.shadowOf(Looper.getMainLooper()).idle();
-            assertEquals(3, h.composer().commands.options.size());
+            assertEquals(3, agentOptions(h).size());
             MainActivityGoalTest.ShadowClient.response = response(200, modes().put("commands", new JSONArray("[{name:'repo:check',displayName:'Project check',kind:'skill',description:'Verify tests',scope:'repo'}]")));
             h.call("loadPermissions"); complete(h);
             assertTrue(MainActivityGoalTest.ShadowClient.calls.get(0).get(1).contains("project_id=project-one&backend=codex&chat_id=chat-one"));
             MainActivityGoalTest.ShadowClient.calls.clear();
             Shadows.shadowOf(Looper.getMainLooper()).idle();
-            assertEquals(1, h.composer().commands.options.size());
-            assertEquals("Project check", h.composer().commands.options.get(0).title.getText().toString());
-            assertEquals("Project", h.composer().commands.options.get(0).source.getText().toString());
-            h.composer().commands.options.get(0).performClick();
+            assertEquals(1, agentOptions(h).size());
+            assertEquals("Project check", agentOptions(h).get(0).title.getText().toString());
+            assertEquals("Project", agentOptions(h).get(0).source.getText().toString());
+            agentOptions(h).get(0).performClick();
             assertEquals("/repo:check ", h.composer().input.getText().toString());
             commands(h, "[]"); h.send("/repo:check");
             assertEquals("No matching agent commands", h.<String>get("goalError")); assertTrue(h.io.jobs.isEmpty());

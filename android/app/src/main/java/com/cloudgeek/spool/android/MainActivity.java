@@ -152,6 +152,7 @@ public final class MainActivity extends Activity {
     private NativeUi.IconButton send;
     private NativeUi.ChoiceButton modelButton, permissionButton;
     private NativeUi.Composer composerView;
+    private NativeRemoteAgents remoteAgents;
     private NativeQueuedMessages queuedView;
     // A queue request answers only over the connection and sign-in it was made with. Once either
     // changes, its answer is dropped, so it must not go on counting as in flight.
@@ -577,6 +578,7 @@ public final class MainActivity extends Activity {
 
     private void discardComposerDrafts() {
         // Web resets the composer on navigation, not on first-send ID adoption or a rerender.
+        if (remoteAgents != null) remoteAgents.reset();
         composer = null;
         pickerDraft = null;
         for (Draft value : drafts.values()) { value.text = ""; value.files.clear(); }
@@ -721,6 +723,7 @@ public final class MainActivity extends Activity {
         closeChatMenu();
         clearSidebarPreparation();
         if (ui != null) ui.dismissMenus();
+        if (remoteAgents != null) remoteAgents.suspend();
         closeAvatarPicker();
         closeImagePreview();
         detachPeople();
@@ -2882,6 +2885,18 @@ public final class MainActivity extends Activity {
         page.addView(historyViewport, new LinearLayout.LayoutParams(-1, 0, 1));
         composerView = ui.new Composer(composerHint(), this::pickFiles, this::chooseModel,
                 this::choosePermission, this::sendOrStop);
+        if (remoteAgents == null) remoteAgents = new NativeRemoteAgents(new NativeRemoteAgents.Host() {
+            public void request(JSONObject input, java.util.function.Consumer<Object> done, java.util.function.Consumer<Exception> failed) {
+                api("/federation/agents", input, done::accept, failed);
+            }
+            public void parent(java.util.function.Consumer<String> done, java.util.function.Consumer<Exception> failed) {
+                ensureRemoteParent(done, failed);
+            }
+            public void changed() { updateComposer(); }
+            public void error(Exception error) { commandFailed(error); }
+            public void open(String url) { openBrowser(url); }
+        });
+        remoteAgents.attach(ui, composerView);
         composer = composerView.input;
         fileBar = composerView.attachments;
         modelButton = composerView.model;
@@ -2967,25 +2982,34 @@ public final class MainActivity extends Activity {
         boolean running = chat != null && chat.optString("status").equals("running");
         boolean stopping = activeTurn != null && (stoppingTurns.contains(activeTurn.optString("id"))
                 || activeSubmission(activeTurn) != null && pendingSend.stopRequested);
+        if (remoteAgents != null) remoteAgents.bind(authEpoch + "\n" + serverProfiles.selected + "\n" + projectID + "\n" + draftVersion,
+                chatID, user != null && user.optString("source_server_id").isEmpty() && !routeLoginRequired,
+                foreground && !destroyed, writable(), busy, running, federationTargets);
+        boolean remote = remoteAgents != null && remoteAgents.targeted();
+        boolean remoteBusy = remoteAgents != null && remoteAgents.busy();
         composerView.commands.catalog(backend, agentCommands(), commandCatalogMessage());
-        composerView.commands.bind(writable() && selectedAgentAvailable(), busy, running);
+        composerView.commands.bind(writable(), busy || remoteBusy, running);
         composerView.commands.notice(goalNotice, () -> { goalNotice = ""; updateComposer(); });
         composerView.commands.error(goalError, () -> { goalError = ""; updateComposer(); });
         boolean editing = delivering() && editingQueue;
-        composer.setEnabled(writable() && !editing);
+        composer.setEnabled(writable() && !editing && !remoteBusy);
         String hint = composerHint();
         if (!TextUtils.equals(composer.getHint(), hint)) composer.setHint(hint);
-        composerView.add.setEnabled(!busy && writable() && !editing);
-        modelButton.setEnabled(!busy && !running && writable());
-        permissionButton.setEnabled(!busy && !running && writable());
+        composerView.add.setEnabled(!busy && !remoteBusy && !remote && writable() && !editing);
+        modelButton.setEnabled(!busy && !remoteBusy && !running && writable());
+        permissionButton.setEnabled(!busy && !remoteBusy && !remote && !running && writable());
         modelButton.setVisibility(projectID.isEmpty() ? View.GONE : View.VISIBLE);
-        permissionButton.setVisibility(projectID.isEmpty() ? View.GONE : View.VISIBLE);
+        permissionButton.setVisibility(projectID.isEmpty() || remote ? View.GONE : View.VISIBLE);
         boolean hasDraft = !NativeGoalCommand.trim(composer.getText().toString()).isEmpty() || !draft().files.isEmpty();
         boolean showStop = activeTurn != null && !hasDraft;
         send.setKind(showStop ? stopping ? "spinner" : "stop" : "send");
         send.setContentDescription(showStop ? ui.t(stopping ? "Stopping…" : "Stop response") : ui.t("Send message"));
         send.setEnabled(writable() && (activeTurn != null ? hasDraft ? queueingDraft(activeTurn) && !delivering() : !stopping
                 : !editing && !busy && selectedAgentAvailable() && permissionReady() && hasDraft));
+        if (remote) {
+            send.setKind(remoteBusy ? "spinner" : "send"); send.setContentDescription(ui.t("Send message"));
+            send.setEnabled(!busy && !running && !remoteBusy && remoteAgents.ready() && hasDraft && draft().files.isEmpty());
+        }
         if (queuedView != null) queuedView.bind(writable() && chat != null ? deliveryQueue() : null, activeTurn != null, delivering());
         String modelName = model.isEmpty() ? tr("CLI default", "CLI 默认") : model;
         for (int i = 0; i < agents.length(); i++) {
@@ -3003,6 +3027,28 @@ public final class MainActivity extends Activity {
                 effectivePermission.equals("ask") || effectivePermission.equals("manual") ? "shield-question" : "shield-check",
                 tr("Permissions", "权限") + ": " + permissionLabel(effectivePermission));
         permissionButton.setDanger(permission.equals("bypassPermissions"));
+        if (remote) {
+            NativeModelSelection remoteModel = remoteAgents.selection;
+            modelButton.bind(remoteModel.model.isEmpty() ? ui.t("CLI default") : remoteModel.model,
+                    remoteModel.backend.equals("claude") ? "claude" : "codex", ui.t("Choose agent and model"));
+        }
+    }
+
+    /** Save a parent record for direct delegation without starting a local Agent. */
+    private void ensureRemoteParent(java.util.function.Consumer<String> done, java.util.function.Consumer<Exception> failed) {
+        if (!chatID.isEmpty()) { done.accept(chatID); return; }
+        final int selected = selectionEpoch;
+        final String project = projectID;
+        final Draft submitted = draft();
+        api("/chats", object("project_id", project, "backend", backend), value -> {
+            if (selected != selectionEpoch || !project.equals(projectID) || remoteAgents == null) return;
+            JSONObject created = (JSONObject) value;
+            String id = created.optString("id");
+            if (id.isEmpty()) { failed.accept(new IOException(ui.t("The server returned an invalid response"))); return; }
+            captureDraft(); remoteAgents.adoptChat(id); chatID = id; chat = created;
+            drafts.remove("new/" + project); drafts.put(id, submitted); ++selectionEpoch;
+            renderChat(); startChat(); done.accept(id);
+        }, failed);
     }
 
     private void openSidebar() {
@@ -3848,6 +3894,7 @@ public final class MainActivity extends Activity {
     }
 
     private void chooseModel() {
+        if (remoteAgents != null && remoteAgents.targeted()) { remoteAgents.chooseModel(); return; }
         showModelMenu();
     }
 
@@ -4134,6 +4181,7 @@ public final class MainActivity extends Activity {
         localDeliveries.add(local);
         final JSONObject payload = object("message", message, "backend", chat.optString("backend", backend), "model", model,
                 "reasoning_effort", effort, "permission_mode", permission, "delivery", steer ? "steer" : "queue", "client_message_id", local.id);
+        if (remoteAgents != null) remoteAgents.attachMCPs(payload);
         beginDelivery(true); goalError = "";
         submitted.text = ""; submitted.files.clear(); composer.setText("");
         renderFiles(); renderChat();
@@ -4146,7 +4194,7 @@ public final class MainActivity extends Activity {
                     JSONArray upload = new JSONArray();
                     for (Attachment file : files)
                         upload.put(object("name", file.name, "data", android.util.Base64.encodeToString(file.data, android.util.Base64.NO_WRAP)));
-                    value = decodeResponse(captured.upload(target, object("fields", payload, "files", upload).toString(), auth, loc));
+                    value = decodeResponse(captured.upload(target, object("fields", uploadFields(payload), "files", upload).toString(), auth, loc));
                 }
                 final JSONObject result = (JSONObject) value;
                 post(token, () -> {
@@ -4242,6 +4290,19 @@ public final class MainActivity extends Activity {
 
     private void sendOrStop() {
         if (!writable()) return;
+        if (remoteAgents != null && remoteAgents.menuSubmission()) return;
+        if (remoteAgents != null && remoteAgents.targeted()) {
+            captureDraft();
+            final Draft submitted = draft(); final String message = submitted.text;
+            if (NativeGoalCommand.trim(message).isEmpty()) return;
+            goalNotice = goalError = "";
+            remoteAgents.send(message, !submitted.files.isEmpty(), accepted -> {
+                if (accepted && composer != null && composer.getText().toString().equals(message)) {
+                    submitted.text = ""; composer.setText("");
+                }
+            });
+            return;
+        }
         JSONObject activeTurn = NativeChatState.runningTurn(chat);
         if (activeTurn != null) {
             if (!NativeGoalCommand.trim(composer.getText().toString()).isEmpty() || !draft().files.isEmpty()) deliver(false);
@@ -4299,6 +4360,7 @@ public final class MainActivity extends Activity {
                         effort,
                         "permission_mode",
                         permission);
+        if (remoteAgents != null) remoteAgents.attachMCPs(payload);
         final List<Attachment> files = sending.files;
         final String agent = backend;
         pendingSend = optimisticSend = sending;
@@ -4333,6 +4395,7 @@ public final class MainActivity extends Activity {
                                 sending.adopt(created.optString("id"));
                                 if (current) {
                                     captureDraft();
+                                    if (remoteAgents != null) remoteAgents.adoptChat(created.optString("id"));
                                     chatID = created.optString("id"); drafts.put(chatID, submitted);
                                     drafts.remove("new/" + pid);
                                     ++selectionEpoch;
@@ -4366,7 +4429,7 @@ public final class MainActivity extends Activity {
                                     decodeResponse(
                                             captured.upload(
                                                     id,
-                                                    object("fields", payload, "files", upload)
+                                                    object("fields", uploadFields(payload), "files", upload)
                                                             .toString(),
                                                     auth,
                                                     loc));
@@ -4383,6 +4446,7 @@ public final class MainActivity extends Activity {
                                         captureDraft();
                                         Draft currentDraft = draft();
                                         if (!chatID.equals(result.optString("id"))) {
+                                            if (remoteAgents != null) remoteAgents.adoptChat(result.optString("id"));
                                             drafts.remove(sending.key);
                                             chatID = result.optString("id");
                                             sending.adopt(chatID); ++selectionEpoch;
@@ -4475,6 +4539,13 @@ public final class MainActivity extends Activity {
         goalError = failure.getMessage() == null ? failure.toString() : failure.getMessage(); updateComposer();
     }
 
+    private JSONObject uploadFields(JSONObject payload) throws org.json.JSONException {
+        JSONObject fields = new JSONObject(payload.toString());
+        JSONArray mcp = fields.optJSONArray("mcp_servers");
+        if (mcp != null) fields.put("mcp_servers", mcp.toString());
+        return fields;
+    }
+
     private void runAgentControl(String command, Draft submitted) {
         if (chat != null && !backend.equals(chat.optString("backend"))) {
             goalError = ui.t("Select this chat's current agent to run session commands"); updateComposer(); return;
@@ -4490,7 +4561,9 @@ public final class MainActivity extends Activity {
             if (created.optString("id").isEmpty()) {
                 busy = false; commandFailed(new IOException(ui.t("The server returned an invalid response"))); return;
             }
-            captureDraft(); chatID = created.optString("id"); chat = created;
+            captureDraft();
+            if (remoteAgents != null) remoteAgents.adoptChat(created.optString("id"));
+            chatID = created.optString("id"); chat = created;
             drafts.remove(draftKey); drafts.put(chatID, submitted); ++selectionEpoch;
             chats = NativeChatState.reconcileList(chats, created);
             NativeGoalRequest adopted = new NativeGoalRequest(authEpoch, selectionEpoch, selectionKey(), message);
@@ -5037,7 +5110,7 @@ public final class MainActivity extends Activity {
                 if (value instanceof JSONArray && !routeLoginRequired) {
                     federationTargets = (JSONArray) value;
                     rememberFederationTargets(serverRuntimes.get(serverProfiles.selected), user.optString("id"), federationTargets);
-                    renderNavigation();
+                    updateComposer();
                 }
                 break;
             case "desktop":
@@ -5830,6 +5903,7 @@ public final class MainActivity extends Activity {
             updateHistoryLoading();
             if (!inbox.active.isEmpty() && peoplePanel == null && !settingsOpen) openPeople(inbox.active);
         }
+        if (composer != null && remoteAgents != null) updateComposer();
     }
 
     @Override public void onWindowFocusChanged(boolean focused) {
@@ -5839,6 +5913,7 @@ public final class MainActivity extends Activity {
 
     @Override
     protected void onStop() {
+        if (remoteAgents != null) remoteAgents.suspend();
         finishFederation();
         closeChatMenu();
         foreground = false;
@@ -5875,6 +5950,7 @@ public final class MainActivity extends Activity {
 
     @Override
     protected void onDestroy() {
+        if (remoteAgents != null) remoteAgents.reset();
         closeChatMenu();
         clearSidebarPreparation();
         if (devicePairingDialog != null) devicePairingDialog.dismiss();

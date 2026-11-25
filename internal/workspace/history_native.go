@@ -503,13 +503,25 @@ func codexResponseGroups(turns []agent.CodexHistoryTurn) [][]agent.CodexHistoryT
 // codexHistoryPage reads a bounded page directly. It does not change the newest
 // window or the base transcript of an active turn.
 func (s *Store) codexHistoryPage(ctx context.Context, chat chatmodel.Session, before string) (chatmodel.Session, error) {
-	encoded, ok := strings.CutPrefix(before, "native-")
-	if len(encoded) > 16384 {
-		return chat, errHistoryCursor
-	}
-	data, err := base64.RawURLEncoding.DecodeString(encoded)
+	return s.codexHistoryPageWithLimit(ctx, chat, before, codexWindowTurnPage*codexWindowMaxPages)
+}
+
+// An empty before reads the newest page. The limit counts native turns;
+// completing the oldest logical response can read additional internal turns
+// belonging to that same response.
+func (s *Store) codexHistoryPageWithLimit(ctx context.Context, chat chatmodel.Session, before string, limit int) (chatmodel.Session, error) {
 	var anchor codexPageAnchor
-	if !ok || err != nil || json.Unmarshal(data, &anchor) != nil || anchor.Chat != chat.ID || anchor.Cursor == "" || chat.Backend != chatmodel.BackendCodex {
+	if before != "" {
+		encoded, ok := strings.CutPrefix(before, "native-")
+		if !ok || len(encoded) > 16384 {
+			return chat, errHistoryCursor
+		}
+		data, err := base64.RawURLEncoding.DecodeString(encoded)
+		if err != nil || json.Unmarshal(data, &anchor) != nil || anchor.Chat != chat.ID || anchor.Cursor == "" {
+			return chat, errHistoryCursor
+		}
+	}
+	if chat.Backend != chatmodel.BackendCodex {
 		return chat, errHistoryCursor
 	}
 	if _, enabled := s.codexBinary(); !enabled {
@@ -524,7 +536,7 @@ func (s *Store) codexHistoryPage(ctx context.Context, chat chatmodel.Session, be
 	var turns []agent.CodexHistoryTurn
 	cursor := anchor.Cursor
 	for range codexWindowMaxPages {
-		page, err := reader.Turns(ctx, chat.NativeSessionID, cursor, codexWindowTurnPage)
+		page, err := reader.Turns(ctx, chat.NativeSessionID, cursor, min(codexWindowTurnPage, limit-len(turns)))
 		if err != nil {
 			return chat, err
 		}
@@ -532,7 +544,7 @@ func (s *Store) codexHistoryPage(ctx context.Context, chat chatmodel.Session, be
 		turns = append(page.Turns, turns...)
 		previous := cursor
 		cursor = page.Before
-		if cursor == "" || cursor == previous || turnBytes(turns) >= historyPageBytes {
+		if cursor == "" || cursor == previous || len(turns) >= limit || turnBytes(turns) >= historyPageBytes {
 			break
 		}
 	}

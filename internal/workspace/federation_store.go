@@ -58,6 +58,17 @@ CREATE TABLE IF NOT EXISTS federation_user_checks(user_id TEXT PRIMARY KEY REFER
 CREATE TABLE IF NOT EXISTS federation_user_revocations(peer_id TEXT NOT NULL REFERENCES federation_peers(id),subject TEXT NOT NULL,grant_id TEXT NOT NULL,nonce TEXT NOT NULL,retry_at INTEGER NOT NULL DEFAULT 0,PRIMARY KEY(peer_id,subject));
 CREATE TABLE IF NOT EXISTS federation_user_revocation_receipts(peer_id TEXT NOT NULL,nonce TEXT NOT NULL,PRIMARY KEY(peer_id,nonce));
 CREATE TABLE IF NOT EXISTS federation_user_access_revocations(peer_id TEXT NOT NULL,subject TEXT NOT NULL,revoked_at INTEGER NOT NULL,PRIMARY KEY(peer_id,subject));
+CREATE TABLE IF NOT EXISTS federation_agent_tasks(
+ id TEXT PRIMARY KEY,peer_id TEXT NOT NULL,subject TEXT NOT NULL,origin_chat TEXT NOT NULL,origin_turn TEXT NOT NULL,
+ request_id TEXT NOT NULL,fingerprint TEXT NOT NULL,chat_id TEXT NOT NULL REFERENCES sessions(id) ON DELETE CASCADE,
+ state TEXT NOT NULL,body TEXT NOT NULL,created_at INTEGER NOT NULL,
+ UNIQUE(peer_id,subject,request_id)
+);
+CREATE INDEX IF NOT EXISTS federation_agent_conversations ON federation_agent_tasks(peer_id,subject,origin_chat,chat_id);
+CREATE TABLE IF NOT EXISTS federation_agent_calls(
+ user_id TEXT NOT NULL REFERENCES users(id),origin_chat TEXT NOT NULL,peer_id TEXT NOT NULL,request_id TEXT NOT NULL,
+ body TEXT NOT NULL,updated_at INTEGER NOT NULL,PRIMARY KEY(user_id,peer_id,request_id)
+);
 `
 
 const (
@@ -584,6 +595,34 @@ func (s *Store) federationLogin(peer FederationPeer, person federationSubject, c
 		return "", time.Time{}, err
 	}
 	return token, expires, s.notify(tx.Commit(), changeNavigation|changeProfiles)
+}
+
+// federationAgentIdentity resolves an already provisioned remote account whose
+// profile is unchanged, without creating a session. Every agent operation
+// redeems its own ticket; a login for each would rewrite the profile and
+// notify all clients several times a second while a task is being watched.
+// It reports false whenever the ordinary login has something to decide.
+func (s *Store) federationAgentIdentity(peer FederationPeer, person federationSubject, checked time.Time) (authIdentity, bool) {
+	var v authIdentity
+	if !person.valid() {
+		return v, false
+	}
+	current, err := federationPeer(s.db, peer.ID)
+	if err != nil || current.generation != peer.generation || !current.Accept {
+		return v, false
+	}
+	err = s.db.QueryRow(`SELECT u.id,u.username,u.nickname,u.created_at FROM federation_users f JOIN users u ON u.id=f.user_id
+		LEFT JOIN user_avatars av ON av.user_id=u.id
+		WHERE f.peer_id=? AND f.subject=? AND u.disabled=0 AND u.nickname=? AND COALESCE(av.style,'')=? AND COALESCE(av.seed,'')=?
+		AND NOT EXISTS(SELECT 1 FROM federation_revocations WHERE peer_id=f.peer_id AND source_ref=?)
+		AND NOT EXISTS(SELECT 1 FROM federation_user_access_revocations WHERE peer_id=f.peer_id AND subject=f.subject AND revoked_at>=?)`,
+		peer.ID, person.ID, person.Nickname, person.Avatar.Style, person.Avatar.Seed, person.SourceRef, checked.UnixMilli()).Scan(&v.User.ID, &v.User.Username, &v.User.Nickname, &v.User.CreatedAt)
+	if err != nil {
+		return authIdentity{}, false
+	}
+	v.User.Avatar = person.Avatar
+	v.User.SourceServerID, v.User.SourceServerName, v.User.SourceUserID = peer.ID, current.Name, person.ID
+	return v, true
 }
 
 func (s *Store) federationRevoke(peer FederationPeer, ref string) error {

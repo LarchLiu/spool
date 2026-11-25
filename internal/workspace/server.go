@@ -89,6 +89,8 @@ type App struct {
 	federationStop         context.CancelFunc
 	federationDone         chan struct{}
 	federationTailnet      atomic.Pointer[tailnetRuntime]
+	federationAgentLocks   keyedMutex
+	agentMCP               agentMCPRuntime
 }
 
 type completedTurn struct {
@@ -297,6 +299,8 @@ func (a *App) api(w http.ResponseWriter, r *http.Request) {
 		a.federationIssue(w, r, id)
 	case path == "/api/federation/relay-route" && r.Method == http.MethodPost:
 		a.federationRelayRoute(w, r, id)
+	case path == "/api/federation/agents" && r.Method == http.MethodPost:
+		a.federationAgentResponse(w, r, id)
 	case path == "/api/desktop" && r.Method == http.MethodGet:
 		apiJSON(w, http.StatusOK, map[string]bool{"available": a.remoteDesktopViewAvailable(id, r.URL.Query().Get("token"))})
 	case path == "/api/desktop/connect" && r.Method == http.MethodPost:
@@ -827,6 +831,7 @@ func (a *App) chatRoute(w http.ResponseWriter, r *http.Request, id authIdentity,
 		return
 	}
 	input.userID = id.User.ID
+	input.agentIdentity = &id
 	if len(input.ClientMessageID) > 128 {
 		apiError(w, 400, "Invalid client message ID")
 		return
@@ -972,6 +977,9 @@ func (a *App) startTurnWithInput(chat chatmodel.Session, input messageInput, opt
 	return a.startTurnWithCallback(chat, input, options, nil)
 }
 func (a *App) startTurnWithCallback(chat chatmodel.Session, input messageInput, options chatmodel.CodexOptions, finished func(error)) error {
+	if err := validateMCPSelection(input.MCPServers); err != nil {
+		return err
+	}
 	if err := validateGoalInput(input); err != nil {
 		return err
 	}
@@ -1003,11 +1011,21 @@ func (a *App) startTurnWithCallback(chat chatmodel.Session, input messageInput, 
 		}
 	}
 	turn = a.seedLiveTurn(chat, turn)
+	if input.agentStarted != nil {
+		input.agentStarted(turn.ID)
+	}
 	ctx, control := a.registerTurn(context.Background(), chat.ID, turn.ID)
+	if input.agentIdentity != nil {
+		ctx = context.WithValue(ctx, agentIdentityKey{}, *input.agentIdentity)
+	}
+	ctx = context.WithValue(ctx, agentMCPSelectionKey{}, len(input.MCPServers) != 0)
 	a.turns.Add(1)
 	go func() {
 		defer a.turns.Done()
-		_, err := a.executeTurn(ctx, chat.ID, input.Message, turn, nil, input.files, input.writableDirectories)
+		result, err := a.executeTurn(ctx, chat.ID, input.Message, turn, nil, input.files, input.writableDirectories)
+		if input.agentFinished != nil {
+			input.agentFinished(result, err)
+		}
 		a.releaseTurn(chat.ID, control)
 		if finished != nil {
 			finished(err)
@@ -1199,6 +1217,15 @@ func (a *App) executeTurn(ctx context.Context, id, prompt string, turn chatmodel
 	request.Approve = func(ctx context.Context, request chatmodel.ApprovalRequest) (chatmodel.ApprovalResponse, error) {
 		return a.requestApproval(ctx, id, turn.ID, request)
 	}
+	selectedMCP, _ := ctx.Value(agentMCPSelectionKey{}).(bool)
+	if identity, ok := ctx.Value(agentIdentityKey{}).(authIdentity); selectedMCP && ok && identity.User.SourceServerID == "" {
+		mcp, release, err := a.agentMCPGrant(ctx, identity, id, turn.ID)
+		if err != nil {
+			return finish(agent.AgentResult{}, err)
+		}
+		defer release()
+		request.MCP = mcp
+	}
 	result, runErr := a.runner.Run(ctx, request, func(event agent.AgentEvent) error {
 		if err := ctx.Err(); err != nil {
 			return err
@@ -1323,6 +1350,7 @@ func (a *App) Close() error {
 		err = closer.Close()
 	}
 	a.turns.Wait()
+	a.closeAgentMCP()
 	a.streams.Wait()
 	a.closePush()
 	a.filesMu.Lock()

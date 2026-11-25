@@ -10,14 +10,23 @@ import org.json.JSONObject;
 /** The same catalog, parsing and suggestion order as Web slash-commands.ts. */
 final class NativeSlashCommand {
     final String name, displayName, description, argumentHint, kind, scope, pluginId;
+    final boolean local, enabled, next;
+    private final String localIcon;
     final List<String> aliases = new ArrayList<>();
 
     NativeSlashCommand(JSONObject value) {
+        local = false; enabled = true; next = false; localIcon = "";
         name = value.optString("name"); displayName = value.optString("displayName");
         description = value.optString("description"); argumentHint = value.optString("argumentHint");
         kind = value.optString("kind"); scope = value.optString("scope"); pluginId = value.optString("pluginId");
         JSONArray values = value.optJSONArray("aliases");
         if (values != null) for (int i = 0; i < values.length(); i++) aliases.add(values.optString(i));
+    }
+
+    NativeSlashCommand(String name, String title, String detail, String icon, boolean enabled, boolean next) {
+        this.name = name; displayName = title; description = detail; localIcon = icon;
+        this.enabled = enabled; this.next = next; local = true;
+        argumentHint = scope = pluginId = ""; kind = "client";
     }
 
     static List<NativeSlashCommand> catalog(JSONArray values) {
@@ -81,6 +90,7 @@ final class NativeSlashCommand {
     }
 
     String title(NativeUi ui) {
+        if (local) return displayName;
         if (skill()) return displayName.isEmpty() ? name : displayName;
         switch (name) {
             case "goal": return ui.t("Goal");
@@ -92,6 +102,7 @@ final class NativeSlashCommand {
         }
     }
     String detail(NativeUi ui) {
+        if (local) return description;
         if (!skill()) switch (name) {
             case "goal": return ui.t("Set a goal to keep pursuing");
             case "plan": return ui.t("Turn plan mode on");
@@ -111,6 +122,7 @@ final class NativeSlashCommand {
         return source + (source.isEmpty() || pluginId.isEmpty() ? "" : " · ") + (pluginId.isEmpty() ? "" : ui.t("From {plugin}", "plugin", pluginId));
     }
     String icon() {
+        if (local) return localIcon;
         if (skill()) return "package";
         switch (name) {
             case "goal": return "goal";

@@ -8,6 +8,7 @@ import (
 	"io"
 	"os/exec"
 	"slices"
+	"strings"
 	"sync"
 	"time"
 
@@ -48,6 +49,8 @@ type chatProcess struct {
 	writableDirectories []string
 	proxyEnvironment    []string
 	summaryOnly         bool
+	mcp                 MCPServer
+	replacedMCPProcess  <-chan struct{}
 	ctx                 context.Context
 	cancel              context.CancelFunc
 	process             *agentProcess
@@ -114,6 +117,7 @@ func (r *CLIRunner) reserve(request AgentRequest) (*chatProcess, error) {
 		r.chats = make(map[string]*chatProcess)
 	}
 	chat := r.chats[request.ChatID]
+	var replacedMCPProcess <-chan struct{}
 	if chat != nil {
 		if chat.busy {
 			// A stopped turn may still be unwinding its provider process. Detach
@@ -138,7 +142,10 @@ func (r *CLIRunner) reserve(request AgentRequest) (*chatProcess, error) {
 			default:
 			}
 		}
-		if chat != nil && (dead || chat.ctx.Err() != nil || chat.backend != request.Backend || chat.binary != request.Binary || chat.directory != request.WorkingDirectory || chat.summaryOnly != request.SummaryOnly || !slices.Equal(chat.writableDirectories, request.WritableDirectories) || !slices.Equal(chat.proxyEnvironment, proxyEnvironment)) {
+		if chat != nil && (dead || chat.ctx.Err() != nil || chat.backend != request.Backend || chat.binary != request.Binary || chat.directory != request.WorkingDirectory || chat.summaryOnly != request.SummaryOnly || chat.mcp != requestMCP(request) || !slices.Equal(chat.writableDirectories, request.WritableDirectories) || !slices.Equal(chat.proxyEnvironment, proxyEnvironment)) {
+			if chat.mcp != requestMCP(request) && chat.process != nil {
+				replacedMCPProcess = chat.process.done
+			}
 			chat.cancel()
 			chat = nil
 		}
@@ -147,6 +154,8 @@ func (r *CLIRunner) reserve(request AgentRequest) (*chatProcess, error) {
 		ctx, cancel := context.WithCancel(context.Background())
 		chat = &chatProcess{backend: request.Backend, binary: request.Binary, directory: request.WorkingDirectory, writableDirectories: slices.Clone(request.WritableDirectories), proxyEnvironment: proxyEnvironment, ctx: ctx, cancel: cancel}
 		chat.summaryOnly = request.SummaryOnly
+		chat.mcp = requestMCP(request)
+		chat.replacedMCPProcess = replacedMCPProcess
 		r.chats[request.ChatID] = chat
 	}
 	chat.busy = true
@@ -268,6 +277,17 @@ func (r *CLIRunner) Run(ctx context.Context, request AgentRequest, emit func(Age
 	}
 	reusable := false
 	defer func() { r.release(request.ChatID, chat, reusable) }()
+	if chat.replacedMCPProcess != nil {
+		// A new turn changes the capability. Let the old CLI release its native
+		// session writer and remove private configuration before resuming it.
+		select {
+		case <-chat.replacedMCPProcess:
+		case <-ctx.Done():
+			return AgentResult{}, contextError(ctx)
+		case <-chat.ctx.Done():
+			return AgentResult{}, context.Canceled
+		}
+	}
 	if err := r.startReservedProcess(chat, request); err != nil {
 		return AgentResult{}, err
 	}
@@ -374,6 +394,10 @@ type agentProcess struct {
 }
 
 func startAgentProcess(ctx context.Context, request AgentRequest) (*agentProcess, error) {
+	cleanupMCP := func() {}
+	if err := validateMCP(requestMCP(request)); err != nil {
+		return nil, err
+	}
 	args := []string{"app-server", "--listen", "stdio://", "--config", "sandbox_workspace_write.network_access=false"}
 	if request.Backend == chatmodel.BackendClaude {
 		args = []string{"-p", "--input-format", "stream-json", "--output-format", "stream-json", "--verbose",
@@ -388,18 +412,32 @@ func startAgentProcess(ctx context.Context, request AgentRequest) (*agentProcess
 			args = append(args, "--tools", "", "--strict-mcp-config", "--mcp-config", `{"mcpServers":{}}`, "--disable-slash-commands", "--no-session-persistence")
 			args = append(args, "--system-prompt", request.SystemPrompt)
 		}
+		if request.MCP != nil && !request.SummaryOnly {
+			path, cleanup, err := claudeMCPConfig(*request.MCP)
+			if err != nil {
+				return nil, err
+			}
+			cleanupMCP = cleanup
+			args = append(args, "--mcp-config", path)
+		}
 	}
 	cmd := exec.CommandContext(ctx, request.Binary, args...)
 	cmd.Dir = request.WorkingDirectory
 	configureAgentCommand(cmd)
 	env, err := netproxy.Environment(cmd.Environ())
 	if err != nil {
+		cleanupMCP()
 		return nil, err
 	}
 	cmd.Env = env
+	if request.MCP != nil && !request.SummaryOnly {
+		cmd.Env = slices.DeleteFunc(cmd.Env, func(value string) bool { return strings.HasPrefix(value, "SPOOL_AGENT_MCP_AUTHORIZATION=") })
+		cmd.Env = append(cmd.Env, "SPOOL_AGENT_MCP_AUTHORIZATION=Bearer "+request.MCP.Token)
+	}
 	cmd.WaitDelay = agentExitGracePeriod
 	stdin, err := cmd.StdinPipe()
 	if err != nil {
+		cleanupMCP()
 		return nil, err
 	}
 	reader, writer := io.Pipe()
@@ -408,6 +446,7 @@ func startAgentProcess(ctx context.Context, request AgentRequest) (*agentProcess
 	cmd.Stdout = writer
 	cmd.Stderr = &process.stderr
 	if err := cmd.Start(); err != nil {
+		cleanupMCP()
 		_ = stdin.Close()
 		_ = reader.Close()
 		_ = writer.Close()
@@ -451,6 +490,7 @@ func startAgentProcess(ctx context.Context, request AgentRequest) (*agentProcess
 		}
 		_ = stdin.Close()
 		process.waitErr = errors.Join(waitErr, readErr)
+		cleanupMCP()
 		close(process.done)
 	}()
 	return process, nil

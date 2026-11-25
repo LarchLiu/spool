@@ -94,6 +94,9 @@ func (s *Store) removeDeletedSession(chat chatmodel.Session) error {
 	if _, err = tx.Exec(`UPDATE automation_runs SET chat_id='' WHERE chat_id=?`, chat.ID); err != nil {
 		return err
 	}
+	if _, err = tx.Exec(`DELETE FROM federation_agent_calls WHERE origin_chat=?`, chat.ID); err != nil {
+		return err
+	}
 	if _, err = tx.Exec(`DELETE FROM sessions WHERE id=?`, chat.ID); err != nil {
 		return err
 	}

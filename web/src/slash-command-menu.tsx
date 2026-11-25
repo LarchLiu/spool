@@ -7,6 +7,8 @@ import {
   Repeat2,
   ScanSearch,
   Terminal,
+  ChevronRight,
+  Plug,
 } from "lucide-react";
 import type { Translator } from "./i18n";
 import type { AgentCommand } from "./types";
@@ -60,7 +62,9 @@ export function SlashCommandMenu({
             onMouseEnter={() => onActiveIndex(index)}
             onClick={() => onSelect(command)}
           >
-            {command.kind === "skill" ? (
+            {command.name === "mcp" ? (
+              <Plug size={18} aria-hidden="true" />
+            ) : command.kind === "skill" ? (
               <Package size={18} aria-hidden="true" />
             ) : command.name === "goal" ? (
               <Goal size={18} aria-hidden="true" />
@@ -77,35 +81,46 @@ export function SlashCommandMenu({
             )}
             <span className="slash-command-content">
               <strong>
-                {command.kind === "skill"
-                  ? command.displayName || command.name
-                  : command.name === "goal"
-                    ? t("Goal")
-                    : command.name === "plan"
-                      ? t("Plan mode")
-                      : command.name === "review" ||
-                          command.name === "code-review"
-                        ? t("Code review")
-                        : command.name === "loop"
-                          ? t("Loop")
-                          : command.name === "deep-research"
-                            ? t("Deep research")
-                            : `/${command.name}`}
+                {command.name === "mcp"
+                  ? "mcp"
+                  : command.kind === "skill"
+                    ? command.displayName || command.name
+                    : command.name === "goal"
+                      ? t("Goal")
+                      : command.name === "plan"
+                        ? t("Plan mode")
+                        : command.name === "review" ||
+                            command.name === "code-review"
+                          ? t("Code review")
+                          : command.name === "loop"
+                            ? t("Loop")
+                            : command.name === "deep-research"
+                              ? t("Deep research")
+                              : `/${command.name}`}
               </strong>
               <small title={command.description}>
-                {command.name === "goal" && command.kind !== "skill"
-                  ? t("Set a goal to keep pursuing")
-                  : command.kind !== "skill" &&
-                      (command.name === "review" ||
-                        command.name === "code-review")
-                    ? t(
-                        "Review uncommitted changes or compare against a branch",
-                      )
-                    : command.kind !== "skill" && command.name === "plan"
-                      ? t("Turn plan mode on")
-                      : command.description}
+                {command.name === "mcp"
+                  ? t("Choose MCP tools for this chat")
+                  : command.name === "goal" && command.kind !== "skill"
+                    ? t("Set a goal to keep pursuing")
+                    : command.kind !== "skill" &&
+                        (command.name === "review" ||
+                          command.name === "code-review")
+                      ? t(
+                          "Review uncommitted changes or compare against a branch",
+                        )
+                      : command.kind !== "skill" && command.name === "plan"
+                        ? t("Turn plan mode on")
+                        : command.description}
               </small>
             </span>
+            {command.name === "mcp" && (
+              <ChevronRight
+                className="slash-command-next"
+                size={15}
+                aria-hidden="true"
+              />
+            )}
             {command.kind === "skill" &&
               (command.pluginId || command.scope) && (
                 <small className="slash-command-source">

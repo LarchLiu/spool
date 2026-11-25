@@ -10,6 +10,7 @@ import (
 	"io"
 	"net"
 	"net/http"
+	"time"
 
 	"spool/internal/netproxy"
 	"spool/relay"
@@ -20,16 +21,23 @@ func federationHTTP(ctx context.Context, origin string, body []byte, transport *
 }
 
 func federationHTTPPost(ctx context.Context, origin, path string, body []byte, transport *http.Transport) ([]byte, error) {
-	if len(body) > federationMaxBody {
+	if len(body) > federationWireMaxBody {
 		return nil, errors.New("federation request too large")
 	}
 	defer transport.CloseIdleConnections()
+	// Every caller bounds its exchange with a context deadline. Agent
+	// operations wait longer than an ordinary control message for the answer.
+	timeout := federationTimeout
+	if deadline, ok := ctx.Deadline(); ok {
+		timeout = max(timeout, time.Until(deadline))
+	}
+	transport.ResponseHeaderTimeout = timeout
 	request, err := http.NewRequestWithContext(ctx, http.MethodPost, origin+path, bytes.NewReader(body))
 	if err != nil {
 		return nil, err
 	}
 	request.Header.Set("Content-Type", "application/json")
-	client := &http.Client{Transport: transport, Timeout: federationTimeout, CheckRedirect: federationNoRedirect}
+	client := &http.Client{Transport: transport, Timeout: timeout, CheckRedirect: federationNoRedirect}
 	response, err := client.Do(request)
 	if err != nil {
 		return nil, err
@@ -38,8 +46,8 @@ func federationHTTPPost(ctx context.Context, origin, path string, body []byte, t
 	if response.StatusCode != http.StatusOK {
 		return nil, errors.New("federation control request refused")
 	}
-	data, err := io.ReadAll(io.LimitReader(response.Body, federationMaxBody+1))
-	if err == nil && len(data) > federationMaxBody {
+	data, err := io.ReadAll(io.LimitReader(response.Body, federationWireMaxBody+1))
+	if err == nil && len(data) > federationWireMaxBody {
 		err = errors.New("federation response too large")
 	}
 	return data, err

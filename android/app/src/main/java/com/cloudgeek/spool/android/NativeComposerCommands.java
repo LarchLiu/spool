@@ -9,6 +9,15 @@ import android.widget.TextView;
 
 /** Owns native slash completion without taking the EditText's focus or replacing its document. */
 final class NativeComposerCommands {
+    interface ClientMenu {
+        NativeSlashCommand root();
+        java.util.List<NativeSlashCommand> suggestions(String text);
+        void select(NativeSlashCommand command);
+        boolean canBack();
+        boolean back();
+        boolean commandsEnabled();
+    }
+    ClientMenu clientMenu;
     final TextView hint;
     final NativePopover menu;
     final java.util.List<NativeSlashCommandMenu> options = new java.util.ArrayList<>();
@@ -17,7 +26,7 @@ final class NativeComposerCommands {
     private LinearLayout errorRow;
     private final NativeUi ui;
     private final NativeUi.Composer composer;
-    private boolean writable, posting, running, dismissed, hiding;
+    private boolean writable, posting, running, dismissed, hiding, localMenu;
     private int handledKey;
     private int activeIndex;
     private java.util.List<NativeSlashCommand> catalog = java.util.Collections.emptyList(), suggestions;
@@ -46,10 +55,12 @@ final class NativeComposerCommands {
         composer.input.setOnKeyListener((view, key, event) -> {
             if (event.getAction() == KeyEvent.ACTION_UP && handledKey == key) { handledKey = 0; return true; }
             if (event.getAction() != KeyEvent.ACTION_DOWN || composing()) return false;
-            boolean complete = menu.isShowing() && !options.isEmpty() && (key == KeyEvent.KEYCODE_TAB || key == KeyEvent.KEYCODE_ENTER
+            boolean complete = menu.isShowing() && !options.isEmpty() && (key == KeyEvent.KEYCODE_DPAD_RIGHT && suggestions != null && suggestions.get(activeIndex).local
+                    || key == KeyEvent.KEYCODE_TAB || key == KeyEvent.KEYCODE_ENTER
                     && !event.isMetaPressed() && !event.isAltPressed() && !event.isShiftPressed());
             boolean navigation = menu.isShowing() && !options.isEmpty() && (key == KeyEvent.KEYCODE_DPAD_DOWN || key == KeyEvent.KEYCODE_DPAD_UP);
             boolean escape = menu.isShowing() && key == KeyEvent.KEYCODE_ESCAPE;
+            boolean back = menu.isShowing() && key == KeyEvent.KEYCODE_DPAD_LEFT && clientMenu != null && clientMenu.canBack();
             // Enter sends and Shift+Enter breaks the line. A touch keyboard has no
             // Shift+Enter, so its Enter keeps the line break and the button sends.
             boolean hardware = (event.getFlags() & KeyEvent.FLAG_SOFT_KEYBOARD) == 0
@@ -57,7 +68,7 @@ final class NativeComposerCommands {
             boolean direct = event.isMetaPressed() || event.isCtrlPressed();
             boolean send = key == KeyEvent.KEYCODE_ENTER && !event.isShiftPressed()
                     && (direct || event.isAltPressed() || hardware);
-            if (!complete && !navigation && !escape && !send) return false;
+            if (!complete && !navigation && !escape && !back && !send) return false;
             handledKey = key;
             if (event.getRepeatCount() != 0) return true;
             if (complete) select();
@@ -65,7 +76,8 @@ final class NativeComposerCommands {
                 activeIndex = (activeIndex + (key == KeyEvent.KEYCODE_DPAD_DOWN ? 1 : options.size() - 1)) % options.size();
                 for (int i = 0; i < options.size(); i++) options.get(i).setActive(i == activeIndex);
                 menu.reveal(options.get(activeIndex));
-            } else if (escape) { dismissed = true; hide(); }
+            } else if (back) { clientMenu.back(); }
+            else if (escape) { dismissed = true; hide(); }
             else if (send && writable && !posting) {
                 // The key never stops a running turn; that is the button's job.
                 if (!running) submit.run();
@@ -96,10 +108,21 @@ final class NativeComposerCommands {
 
     private boolean composing() { return android.view.inputmethod.BaseInputConnection.getComposingSpanStart(composer.input.getText()) >= 0; }
 
-    private void refresh() {
+    void refresh() {
         String text = composer.input.getText().toString();
-        suggestions = NativeSlashCommand.suggestions(text, catalog);
-        String key = catalogKey + "\n" + text;
+        java.util.List<NativeSlashCommand> commands = catalog;
+        if (clientMenu != null) {
+            commands = new java.util.ArrayList<>(); commands.add(clientMenu.root());
+            for (NativeSlashCommand item : catalog) if (!item.name.equals("mcp")) commands.add(item);
+        }
+        suggestions = clientMenu == null ? null : clientMenu.suggestions(text);
+        localMenu = suggestions != null;
+        if (suggestions == null) suggestions = NativeSlashCommand.suggestions(text, commands);
+        if (!localMenu && clientMenu != null && !clientMenu.commandsEnabled()) suggestions = null;
+        StringBuilder state = new StringBuilder();
+        if (suggestions != null) for (NativeSlashCommand item : suggestions)
+            state.append(item.name).append(item.description).append(item.enabled).append('\n');
+        String key = catalogKey + "\n" + text + "\n" + state;
         if (!selectionKey.equals(key)) { selectionKey = key; activeIndex = 0; renderedKey = ""; }
         hint.setVisibility(NativeGoalCommand.parse(text) == null ? View.GONE : View.VISIBLE);
         boolean show = writable && composer.input.hasFocus() && !posting && !running && !dismissed && suggestions != null;
@@ -111,7 +134,7 @@ final class NativeComposerCommands {
 
     private void renderOptions() {
         options.clear(); menu.content.removeAllViews(); boolean skills = false;
-        if (suggestions.isEmpty()) {
+        if (suggestions.isEmpty() || !localMenu && catalog.isEmpty()) {
             TextView empty = ui.text(catalogMessage.isEmpty() ? ui.t("No matching agent commands") : catalogMessage, 12, ui.subtle);
             ui.normalFallbackLineSpacing(empty); empty.setPadding(ui.dp(12), ui.dp(8), ui.dp(12), ui.dp(8));
             empty.setAccessibilityLiveRegion(View.ACCESSIBILITY_LIVE_REGION_POLITE);
@@ -129,11 +152,16 @@ final class NativeComposerCommands {
         menu.reveal(options.isEmpty() ? menu.content : options.get(activeIndex));
     }
 
+    /** Whether the open list belongs to the client menu rather than the agent's slash commands. */
+    boolean clientMenuShowing() { return localMenu && menu.isShowing(); }
+
     void select() {
         if (suggestions != null && activeIndex < suggestions.size()) select(suggestions.get(activeIndex));
     }
 
     private void select(NativeSlashCommand command) {
+        if (!command.enabled) return;
+        if (command.local && clientMenu != null) { clientMenu.select(command); refresh(); composer.input.requestFocus(); return; }
         composer.input.setText("/" + command.name + " "); composer.input.setSelection(composer.input.length());
         dismissed = false; hide(); composer.input.requestFocus();
     }

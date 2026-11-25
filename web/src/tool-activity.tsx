@@ -813,15 +813,17 @@ function ActivityItem({
   open,
   onToggle,
   t,
+  outcome: reportedOutcome,
 }: {
   activity: Activity;
   open: boolean;
   onToggle: () => void;
   t: Translator;
+  outcome?: string;
 }) {
   const Icon = iconFor(activity.kind);
   const stats = changeStats([activity]);
-  const outcome = activity.noDetails ? "" : outcomeLabel(activity, t);
+  const outcome = activity.noDetails ? "" : reportedOutcome ?? outcomeLabel(activity, t);
   if (activity.noDetails) return (
     <div className="tool-activity-item">
       <div className="tool-activity-item-summary tool-activity-static" title={activity.label}>
@@ -851,6 +853,13 @@ function ActivityItem({
       {open && <ActivityDetail activity={activity} t={t} />}
     </div>
   );
+}
+
+// Remote calls use the same expandable task row as native child agents. Its
+// data is supplied by the task API, independently of the model's tool context.
+export function TaskActivity({ part, t, outcome }: { part: TranscriptPart; t: Translator; outcome?: string }) {
+  const [open, setOpen] = useState(false);
+  return <ActivityItem activity={displayActivity(part, undefined, t)} open={open} onToggle={() => setOpen(value => !value)} t={t} outcome={outcome} />;
 }
 
 // The rows of a compound command describe its steps; they share one execution.

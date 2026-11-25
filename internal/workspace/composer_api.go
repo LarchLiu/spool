@@ -2,23 +2,33 @@ package workspace
 
 import (
 	"context"
+	"encoding/json"
 	"fmt"
 	"io"
 	"log"
 	"net/http"
 	"strings"
 
+	"spool/internal/agent"
 	"spool/internal/i18n"
 	chatmodel "spool/internal/model"
 )
 
 type messageInput struct {
-	userID         string
-	Message        string            `json:"message"`
-	Model          string            `json:"model"`
-	Effort         string            `json:"reasoning_effort"`
-	Backend        chatmodel.Backend `json:"backend"`
-	PermissionMode string            `json:"permission_mode"`
+	userID        string
+	agentIdentity *authIdentity
+	agentStarted  func(string)
+	agentFinished func(agent.AgentResult, error)
+	// Remote tasks return native goal get/clear output through their task result.
+	// Local composer messages use the separate native goal control endpoint.
+	allowGoalControl bool
+	Message          string            `json:"message"`
+	Model            string            `json:"model"`
+	Effort           string            `json:"reasoning_effort"`
+	Backend          chatmodel.Backend `json:"backend"`
+	PermissionMode   string            `json:"permission_mode"`
+	// Selected explicitly in the composer, never inferred from trusted peers.
+	MCPServers []string `json:"mcp_servers,omitempty"`
 	// While a turn is running: "queue" waits for it to end, "steer" joins it.
 	Delivery        string `json:"delivery"`
 	ClientMessageID string `json:"client_message_id"`
@@ -31,6 +41,12 @@ func readMessageInput(w http.ResponseWriter, r *http.Request) (messageInput, boo
 	var input messageInput
 	if !strings.HasPrefix(r.Header.Get("Content-Type"), "multipart/form-data;") {
 		ok := decodeJSON(w, r, &input)
+		if ok {
+			if err := validateMCPSelection(input.MCPServers); err != nil {
+				apiError(w, 400, err.Error())
+				ok = false
+			}
+		}
 		return input, ok
 	}
 	r.Body = http.MaxBytesReader(w, r.Body, maxUploadBytes+chatmodel.MaxMessageBytes+65536)
@@ -41,7 +57,9 @@ func readMessageInput(w http.ResponseWriter, r *http.Request) (messageInput, boo
 	}
 	fields := map[string]*string{"message": &input.Message, "model": &input.Model, "reasoning_effort": &input.Effort, "permission_mode": &input.PermissionMode, "delivery": &input.Delivery, "client_message_id": &input.ClientMessageID}
 	var backend string
+	var selectedMCP string
 	fields["backend"] = &backend
+	fields["mcp_servers"] = &selectedMCP
 	seen := map[string]bool{}
 	total := 0
 	for {
@@ -89,7 +107,22 @@ func readMessageInput(w http.ResponseWriter, r *http.Request) (messageInput, boo
 		}
 	}
 	input.Backend = chatmodel.Backend(backend)
+	if selectedMCP != "" && json.Unmarshal([]byte(selectedMCP), &input.MCPServers) != nil {
+		apiError(w, 400, "Invalid MCP selection")
+		return input, false
+	}
+	if err := validateMCPSelection(input.MCPServers); err != nil {
+		apiError(w, 400, err.Error())
+		return input, false
+	}
 	return input, true
+}
+
+func validateMCPSelection(servers []string) error {
+	if len(servers) > 1 || len(servers) == 1 && servers[0] != "spool_federation" {
+		return fmt.Errorf("Invalid MCP selection")
+	}
+	return nil
 }
 
 func (a *App) permissionCatalog(ctx context.Context, chat chatmodel.Session) (catalog chatmodel.PermissionCatalog, err error) {
@@ -239,38 +272,49 @@ func (a *App) requestApproval(ctx context.Context, chatID, turnID string, reques
 	}
 }
 
+type approvalInput struct {
+	ID       string         `json:"id"`
+	TurnID   string         `json:"turn_id"`
+	Allow    bool           `json:"allow"`
+	Content  map[string]any `json:"content"`
+	Decision string         `json:"decision"`
+	Feedback string         `json:"feedback"`
+}
+
 func (a *App) approvalResponse(w http.ResponseWriter, r *http.Request, chat chatmodel.Session, user string) {
-	var input struct {
-		ID       string         `json:"id"`
-		TurnID   string         `json:"turn_id"`
-		Allow    bool           `json:"allow"`
-		Content  map[string]any `json:"content"`
-		Decision string         `json:"decision"`
-		Feedback string         `json:"feedback"`
-	}
+	var input approvalInput
 	if !decodeJSON(w, r, &input) {
 		return
+	}
+	status, err := a.resolveChatApproval(chat, user, input)
+	if err != nil {
+		apiError(w, status, err.Error())
+		return
+	}
+	apiJSON(w, 200, map[string]bool{"ok": true})
+}
+
+func (a *App) resolveChatApproval(chat chatmodel.Session, user string, input approvalInput) (int, error) {
+	if !a.store.CanControlChat(user, chat.ID) {
+		return 403, fmt.Errorf("Remote task is read-only")
 	}
 	a.liveMu.Lock()
 	pending, ok := a.approvals[input.ID]
 	current, running := a.live[chat.ID]
 	if !ok || pending.chatID != chat.ID || pending.turnID != input.TurnID || pending.decided || chat.Status != chatmodel.StatusRunning || !running || current.ID != input.TurnID || current.Status != chatmodel.StatusRunning {
 		a.liveMu.Unlock()
-		apiError(w, 409, "This approval request is no longer pending")
-		return
+		return 409, fmt.Errorf("This approval request is no longer pending")
 	}
 	response, err := pending.request.NormalizeResponse(chatmodel.ApprovalResponse{Allow: input.Allow, Decision: input.Decision, Content: input.Content, Feedback: input.Feedback})
 	if err != nil {
 		a.liveMu.Unlock()
-		apiError(w, 400, err.Error())
-		return
+		return 400, err
 	}
 	kind, summary := pending.request.ResponseAudit(response)
 	action, err := a.store.recordTurnAction(chat.ID, input.TurnID, user, kind, input.ID, summary)
 	if err != nil {
 		a.liveMu.Unlock()
-		apiError(w, 500, "Could not record this operation")
-		return
+		return 500, fmt.Errorf("Could not record this operation")
 	}
 	turn := a.live[chat.ID]
 	turn.Actions = append(append([]chatmodel.TurnAction(nil), turn.Actions...), action)
@@ -278,5 +322,5 @@ func (a *App) approvalResponse(w http.ResponseWriter, r *http.Request, chat chat
 	pending.decided = true
 	pending.decision <- response
 	a.liveMu.Unlock()
-	apiJSON(w, 200, map[string]bool{"ok": true})
+	return 200, nil
 }
