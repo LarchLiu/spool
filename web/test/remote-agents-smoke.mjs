@@ -51,7 +51,7 @@ const plugin = {
       const commandOpen = focused && !remote.target && !mcp.open && commands !== null;
       const send = async () => { try { setError(""); if(mcp.open) {mcp.choose();return;} if(remote.open) {remote.select();return;} if(remote.target) await remote.send(draft); else await api("/chats/parent-chat/messages", {message: draft, mcp_servers: mcp.selected}); setDraft(""); } catch(e) {setError(String(e));} };
       return <main style={{maxWidth: 700, margin: "auto", padding: 16}}>
-        <div style={{minHeight: 350}}><RemoteCalls remote={remote} t={translator("en")} onError={e => setError(String(e))} onContext={text => {remote.clearTarget();setDraft(text);}} /></div>
+        <div style={{minHeight: 350}} />
         {error && <p role="alert">{error}</p>}
         <form className="composer" onSubmit={e => {e.preventDefault(); void send();}}>
           {remote.open && <RemoteTargetMenu remote={remote} t={translator("en")} />}
@@ -59,6 +59,7 @@ const plugin = {
           {commandOpen && <SlashCommandMenu commands={commands} t={translator("en")} activeIndex={0} onActiveIndex={() => {}} onSelect={() => mcp.show()} />}
           <RemoteTargetChip remote={remote} t={translator("en")} />
           {!remote.target && <MCPChips mcp={mcp} t={translator("en")} />}
+          <RemoteCalls remote={remote} t={translator("en")} onError={e => setError(String(e))} onContext={text => {remote.clearTarget();setDraft(text);}} />
           <textarea id="chat-message" aria-label="Message" value={draft} disabled={remote.busy} onChange={e => setDraft(e.target.value)} onFocus={() => setFocused(true)} onBlur={e => {if(!e.relatedTarget?.closest(".slash-command-menu")) setFocused(false);}} onKeyDown={e => {if(mcp.onKeyDown(e)) return; if(commandOpen && ["Enter","ArrowRight","Tab"].includes(e.key)) {e.preventDefault();mcp.show();return;} if(remote.onKeyDown(e)) return; if(e.key === "Enter" && !e.shiftKey) {e.preventDefault(); void send();}}} />
           <div className="composer-bottom"><div className="model-picker"><button type="button" onClick={() => setPicker(!picker)}>Choose agent and model</button>
             {picker && <AgentModelMenu agents={remote.agents} selection={remote.selection} t={translator("en")} onChange={remote.setSelection} />}</div>
@@ -95,6 +96,7 @@ const receipts = [];
 let failFirst = true;
 let projectWritable = true;
 let serversDown = false;
+let historyWait;
 const unreachable = [];
 const localMessages = [];
 const model = (id) => ({
@@ -202,6 +204,7 @@ try {
         receipts.unshift({
           server: input.server,
           request_id: input.request_id,
+          message: input.message,
           task,
         });
         return respond(task);
@@ -237,6 +240,7 @@ try {
         return respond(task);
       }
       case "history":
+        if (historyWait) await historyWait;
         return respond({
           conversation_id: "remote-conversation",
           turns: [
@@ -246,10 +250,12 @@ try {
                 {
                   role: "assistant",
                   text: input.before
-                    ? "Earlier remote history"
-                    : "Latest remote history",
+                    ? "**Earlier remote history**"
+                    : "**Latest remote history**",
                 },
+                { role: "user", text: "Literal *task* text" },
               ],
+              truncated: !!input.before,
             },
           ],
           next: input.before ? "" : "older-cursor",
@@ -264,6 +270,21 @@ try {
   const draft = page.getByRole("textbox", { name: "Message", exact: true });
   const menu = page.getByRole("listbox");
   const send = page.getByRole("button", { name: "Send message", exact: true });
+  const callsControl = page.locator(".remote-calls-control > button");
+  const callsDialog = page.getByRole("dialog");
+  const openTask = async (index = 0) => {
+    await callsControl.click();
+    await callsDialog.locator(".remote-calls-list > button").nth(index).click();
+  };
+  const closeCalls = async () => {
+    await callsDialog
+      .getByRole("button", { name: "Close", exact: true })
+      .click();
+    await callsDialog.waitFor({ state: "detached" });
+    await page.waitForFunction(() =>
+      document.activeElement?.closest(".remote-calls-control"),
+    );
+  };
   const sendLocal = () =>
     Promise.all([
       page.waitForResponse((response) =>
@@ -399,6 +420,15 @@ try {
     .filter({ hasText: "Temporary connection failure" })
     .waitFor();
   await send.click();
+  await callsControl
+    .filter({ hasText: "Remote agents · 1 · Approval required" })
+    .waitFor();
+  assert.equal(
+    await page.locator(".remote-agent-task").count(),
+    0,
+    "Call details stay out of the transcript and composer until opened",
+  );
+  await openTask();
   await page.getByText("Remote approval", { exact: true }).waitFor();
   assert.equal(
     await page
@@ -406,12 +436,11 @@ try {
       .count(),
     0,
   );
-  const firstTask = page.locator(".remote-agent-task").first();
+  const firstTask = callsDialog.locator(".remote-agent-task");
   await firstTask
-    .getByRole("button", { name: /@Trusted server\/Remote project/ })
-    .click();
+    .getByText("Analyze the remote project", { exact: true })
+    .waitFor();
   await firstTask
-    .locator(".tool-task-detail")
     .getByText("Unfinished remote update", { exact: true })
     .waitFor();
   assert.equal(
@@ -442,6 +471,11 @@ try {
   );
   await page.getByRole("checkbox", { name: "Confirm remote action" }).check();
   await page.getByRole("button", { name: "Allow once", exact: true }).click();
+  assert.equal(
+    calls.filter((call) => call.operation === "delegate").length,
+    2,
+    "Approval submission must not submit the composer form",
+  );
   await page
     .getByText("Remote result to use as context", { exact: true })
     .waitFor();
@@ -457,8 +491,53 @@ try {
     .getByRole("button", { name: "Remote history", exact: true })
     .click();
   await page.getByText("Latest remote history", { exact: true }).waitFor();
+  assert.equal(
+    await callsDialog
+      .locator("strong")
+      .filter({ hasText: "Latest remote history" })
+      .count(),
+    1,
+    "History renders assistant Markdown",
+  );
+  await callsDialog.getByText("Literal *task* text", { exact: true }).waitFor();
   await page.getByRole("button", { name: "Load older messages" }).click();
   await page.getByText("Earlier remote history", { exact: true }).waitFor();
+  await callsDialog
+    .getByText("Output truncated. Read remote history for details.", {
+      exact: true,
+    })
+    .waitFor();
+  await callsDialog.getByRole("button", { name: "Back", exact: true }).click();
+  let releaseHistory;
+  historyWait = new Promise((resolve) => {
+    releaseHistory = resolve;
+  });
+  const pendingHistory = page.waitForResponse(
+    (response) =>
+      response.url().endsWith("/api/federation/agents") &&
+      response.request().postDataJSON().operation === "history",
+  );
+  await callsDialog
+    .getByRole("button", { name: "Remote history", exact: true })
+    .click();
+  await callsDialog
+    .getByRole("status")
+    .filter({ hasText: "Loading conversation…" })
+    .waitFor();
+  await callsDialog.getByRole("button", { name: "Back", exact: true }).click();
+  releaseHistory();
+  historyWait = undefined;
+  await (await pendingHistory).finished();
+  await callsDialog
+    .getByText("Remote result to use as context", { exact: true })
+    .waitFor();
+  await closeCalls();
+  assert.ok(
+    await callsControl.evaluate(
+      (element) => document.activeElement === element,
+    ),
+    "Closing returns focus to the calls entry",
+  );
   await mkdir(output, { recursive: true });
   for (const width of [960, 390]) {
     await page.setViewportSize({ width, height: 900 });
@@ -476,21 +555,63 @@ try {
     );
     await page.screenshot({ path: join(output, `remote-${width}.png`) });
     await draft.press("Escape");
+    await callsControl.click();
+    const dialogBounds = await callsDialog.boundingBox();
+    assert.ok(
+      dialogBounds.x >= 0 && dialogBounds.x + dialogBounds.width <= width,
+      "Calls dialog fits the viewport",
+    );
+    assert.ok(
+      await callsDialog.evaluate(
+        (element) => element.scrollWidth <= element.clientWidth,
+      ),
+      "Calls list has no horizontal overflow",
+    );
+    await page.screenshot({ path: join(output, `remote-calls-${width}.png`) });
+    await callsDialog.locator(".remote-calls-list > button").first().click();
+    await firstTask.waitFor();
+    assert.equal(
+      await callsDialog.locator(".remote-agent-history").count(),
+      0,
+      "A closed history request cannot replace reopened task details",
+    );
+    assert.ok(
+      await callsDialog
+        .locator(".remote-calls-body")
+        .evaluate((element) => element.scrollWidth <= element.clientWidth),
+      "Task details have no horizontal overflow",
+    );
+    await page.screenshot({ path: join(output, `remote-task-${width}.png`) });
+    await closeCalls();
   }
+  await openTask();
   await page
     .getByRole("button", { name: "Continue conversation", exact: true })
     .click();
+  await callsDialog.waitFor({ state: "detached" });
   await draft.fill("Follow up");
   await send.click();
+  await openTask();
   await page
     .getByRole("button", { name: "Stop response", exact: true })
     .click();
-  await page.getByText("Stopped", { exact: true }).waitFor();
+  await firstTask.getByRole("status").filter({ hasText: "Stopped" }).waitFor();
   assert.equal(
     calls.filter((call) => call.operation === "delegate").at(-1)
       .conversation_id,
     "remote-conversation",
   );
+  await callsDialog.getByRole("button", { name: "Back", exact: true }).click();
+  assert.ok(
+    (
+      await callsDialog
+        .locator(".remote-calls-list > button")
+        .first()
+        .innerText()
+    ).includes("Stopped"),
+    "Most recent calls appear first",
+  );
+  await callsDialog.locator(".remote-calls-list > button").nth(1).click();
   await page
     .getByRole("button", { name: "Use result as context", exact: true })
     .click();
@@ -498,6 +619,8 @@ try {
   assert.equal(context.remote_server, "remote-server");
   assert.equal(context.reference_output, "**Remote result to use as context**");
   assert.ok(!JSON.stringify(context).includes("Unfinished"));
+  await callsDialog.waitFor({ state: "detached" });
+  await draft.focus();
   // MCP calls are created by the server while the local agent runs. They must
   // appear through receipt polling without selecting a remote composer target.
   receipts.unshift({
@@ -516,15 +639,14 @@ try {
       progress: "MCP remote work in progress",
     },
   });
-  const mcpTask = page
+  await callsControl
+    .filter({ hasText: "Remote agents · 3 · Running" })
+    .waitFor();
+  await openTask();
+  const mcpTask = callsDialog
     .locator(".remote-agent-task")
     .filter({ hasText: "codex-two" });
-  await mcpTask.waitFor();
   await mcpTask
-    .getByRole("button", { name: /@Trusted server\/Remote project/ })
-    .click();
-  await mcpTask
-    .locator(".tool-task-detail")
     .getByText("MCP remote work in progress", { exact: true })
     .waitFor();
   assert.equal(
@@ -544,6 +666,8 @@ try {
     JSON.parse(await draft.inputValue()).reference_output,
     "**MCP final answer**",
   );
+  await callsDialog.waitFor({ state: "detached" });
+  await openTask();
   projectWritable = false;
   const agentsBeforeResume = calls.filter(
     (call) => call.operation === "agents",
@@ -551,7 +675,10 @@ try {
   await mcpTask
     .getByRole("button", { name: "Continue conversation", exact: true })
     .click();
-  await page.getByRole("alert").filter({ hasText: "Read-only" }).waitFor();
+  await callsDialog
+    .getByRole("alert")
+    .filter({ hasText: "Read-only" })
+    .waitFor();
   assert.equal(
     await page
       .getByRole("button", { name: "Remove remote target", exact: true })
@@ -567,6 +694,7 @@ try {
     calls.filter((call) => call.operation === "agents").length,
     agentsBeforeResume,
   );
+  await closeCalls();
   projectWritable = true;
   await draft.fill("Keep this text @Trust");
   await draft.focus();
@@ -618,9 +746,15 @@ try {
   await mcpList.waitFor();
   await draft.press("Enter");
   await removeMCP.waitFor();
+  await openTask();
   await page
-    .getByRole("button", { name: "Switch local chat", exact: true })
-    .click();
+    .getByRole("button", {
+      name: "Switch local chat",
+      exact: true,
+      includeHidden: true,
+    })
+    .evaluate((button) => button.click());
+  await callsDialog.waitFor({ state: "detached" });
   assert.equal(
     await page
       .getByRole("button", { name: "Remove remote target", exact: true })
@@ -767,10 +901,14 @@ try {
   receipts[0].unreachable = false;
   receipts[0].task.status = "completed";
   receipts[0].task.text = "Recovered remote answer";
+  await callsControl.filter({ hasText: "Completed" }).waitFor();
+  await openTask();
   await page.getByText("Recovered remote answer", { exact: true }).waitFor();
+  await page.keyboard.press("Escape");
+  await callsDialog.waitFor({ state: "detached" });
   assert.deepEqual(errors, []);
   console.log(
-    "MCP list navigation and independent selection, metadata-only injection, read-only project denial, chat isolation, Web @ routing, unmatched mentions, retained MCP selection, quiet polling failures, MCP task results and narrow layouts passed",
+    "Android-style remote calls entry, list and live details, Markdown history, approvals outside the composer form, close/back navigation, late history isolation, MCP routing, read-only project denial, chat isolation, quiet polling failures and narrow layouts passed",
   );
 } finally {
   await browser?.close();

@@ -2809,7 +2809,6 @@ function App() {
                 );
               })
             )}
-            <RemoteCalls remote={remote} t={t} onError={fail} onContext={useRemoteContext} />
           </div>
         </div>
         <footer className="composer-wrap">
@@ -2894,6 +2893,7 @@ function App() {
             )}
             <RemoteTargetChip remote={remote} t={t} />
             {!remote.target && <MCPChips mcp={mcp} t={t} disabled={posting || chat?.status === "running"} />}
+            <RemoteCalls remote={remote} t={t} onError={fail} onContext={useRemoteContext} />
             {!!files.length && (
               <div className="composer-attachments">
                 <AttachmentCards

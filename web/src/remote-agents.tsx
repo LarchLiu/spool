@@ -1,10 +1,12 @@
 import {
   useEffect,
+  useId,
   useLayoutEffect,
   useRef,
   useState,
   type KeyboardEvent,
 } from "react";
+import { createPortal } from "react-dom";
 import {
   ArrowLeft,
   ChevronRight,
@@ -17,9 +19,8 @@ import { api } from "./api";
 import { ApprovalCard } from "./approval-card";
 import { chooseModel, type ModelSelection } from "./model-selection";
 import { MarkdownMessage } from "./markdown-message";
-import { TaskActivity } from "./tool-activity";
 import type { Translator } from "./i18n";
-import type { Agent, ApprovalRequest, Project, ToolSummary } from "./types";
+import type { Agent, ApprovalRequest, Project } from "./types";
 
 type Server = {
   id: string;
@@ -121,7 +122,6 @@ export function useRemoteAgents({
     effort: "",
   });
   const [calls, setCalls] = useState<RemoteCall[]>([]);
-  const [history, setHistory] = useState<HistoryPage>();
   const [busy, setBusy] = useState(false);
   const [loading, setLoading] = useState(false);
   const [dismissed, setDismissed] = useState(false);
@@ -159,7 +159,6 @@ export function useRemoteAgents({
       setTarget(undefined);
       setAgents([]);
       setCalls([]);
-      setHistory(undefined);
       setBusy(false);
       retry.current = { key: "", id: "" };
     }
@@ -334,7 +333,6 @@ export function useRemoteAgents({
     } else {
       if (!item.can_create) return;
       setTarget({ server: menuServer, project: item as Project });
-      setHistory(undefined);
       onDraft(consumeRemoteMention(draft));
       setMenuServer(undefined);
     }
@@ -428,47 +426,41 @@ export function useRemoteAgents({
     }
   };
   const resume = async (call: RemoteCall) => {
-    try {
-      const source = current.current;
-      const projects = await operation<Project[]>("projects", {
-        server: call.server,
-      });
-      const project = projects.find((item) => item.id === call.task.project_id);
-      if (!project || current.current !== source) return;
-      if (!project.can_create) throw new Error("Read-only");
-      setTarget({
-        server: servers.find((item) => item.id === call.server) ?? {
-          id: call.server,
-          name: call.server.slice(0, 12),
-        },
-        project,
-        conversation: call.task.conversation_id,
-      });
-      setSelection({
-        backend: call.task.agent,
-        model: call.task.model ?? "",
-        effort: call.task.reasoning_effort ?? "",
-      });
-      focus();
-    } catch (error) {
-      fail(error);
-    }
+    const source = current.current;
+    const projects = await operation<Project[]>("projects", {
+      server: call.server,
+    });
+    const project = projects.find((item) => item.id === call.task.project_id);
+    if (!project || current.current !== source) return false;
+    if (!project.can_create) throw new Error("Read-only");
+    setTarget({
+      server: servers.find((item) => item.id === call.server) ?? {
+        id: call.server,
+        name: call.server.slice(0, 12),
+      },
+      project,
+      conversation: call.task.conversation_id,
+    });
+    setSelection({
+      backend: call.task.agent,
+      model: call.task.model ?? "",
+      effort: call.task.reasoning_effort ?? "",
+    });
+    focus();
+    return true;
   };
   const readHistory = async (call: RemoteCall, before?: string) => {
-    try {
-      const source = current.current;
-      const value = await operation<HistoryPage>("history", {
-        server: call.server,
-        conversation_id: call.task.conversation_id,
-        before,
-      });
-      if (current.current === source) setHistory(value);
-    } catch (error) {
-      fail(error);
-    }
+    const source = current.current;
+    const value = await operation<HistoryPage>("history", {
+      server: call.server,
+      conversation_id: call.task.conversation_id,
+      before,
+    });
+    if (current.current === source) return value;
   };
   const chosen = agents.find((item) => item.backend === selection.backend);
   return {
+    contextKey: JSON.stringify([account, originChat, scope]),
     servers,
     serversLoaded,
     target,
@@ -495,7 +487,6 @@ export function useRemoteAgents({
       adopted.current = origin;
     },
     calls,
-    history,
     resume,
     readHistory,
     approve: (call: RemoteCall, approval: Record<string, unknown>) =>
@@ -505,17 +496,13 @@ export function useRemoteAgents({
         approval,
       }),
     cancel: async (call: RemoteCall) => {
-      try {
-        const source = current.current;
-        const task = await operation<RemoteTask>("cancel", {
-          server: call.server,
-          task_id: call.task.task_id,
-        });
-        if (current.current === source)
-          setCalls((prior) => mergeCalls([{ ...call, task }], prior));
-      } catch (error) {
-        fail(error);
-      }
+      const source = current.current;
+      const task = await operation<RemoteTask>("cancel", {
+        server: call.server,
+        task_id: call.task.task_id,
+      });
+      if (current.current === source)
+        setCalls((prior) => mergeCalls([{ ...call, task }], prior));
     },
   };
 }
@@ -633,165 +620,331 @@ export function RemoteTargetChip({
   );
 }
 
-export function RemoteCalls({
-  remote,
-  t,
-  onError,
-  onContext,
-}: {
+type RemoteCallsProps = {
   remote: RemoteAgents;
   t: Translator;
   onError: (error: unknown) => void;
   onContext: (value: string) => void;
-}) {
+};
+
+function remoteStatus(task: RemoteTask, t: Translator) {
+  return t(
+    task.status === "running"
+      ? "Running"
+      : task.status === "completed"
+        ? "Completed"
+        : task.status === "stopped"
+          ? "Stopped"
+          : task.status === "failed"
+            ? "Failed"
+            : task.status === "awaiting_approval"
+              ? "Approval required"
+              : "Interrupted",
+  );
+}
+
+function remoteLabel(call: RemoteCall, remote: RemoteAgents) {
+  return `@${remote.servers.find((item) => item.id === call.server)?.name || call.server.slice(0, 12)}/${call.task.project_name || call.task.project_id.slice(0, 12)}`;
+}
+
+export function RemoteCalls(props: RemoteCallsProps) {
+  return <RemoteCallsControl key={props.remote.contextKey} {...props} />;
+}
+
+function RemoteCallsControl(props: RemoteCallsProps) {
+  const { remote, t } = props;
+  const [open, setOpen] = useState(false);
+  const trigger = useRef<HTMLButtonElement>(null);
+  const close = (composer = false) => {
+    setOpen(false);
+    requestAnimationFrame(() => {
+      if (composer) document.getElementById("chat-message")?.focus();
+      else trigger.current?.focus();
+    });
+  };
   if (!remote.calls.length) return null;
   return (
-    <section className="remote-calls" aria-label={t("Remote calls")}>
-      <h3>{t("Remote calls")}</h3>
-      {[...remote.calls].reverse().map((call) => (
-        <article className="remote-agent-task" key={call.task.task_id}>
-          <TaskActivity
-            t={t}
-            part={{
-              id: call.task.task_id,
-              role: "assistant",
-              kind: "tool_use",
-              name: `@${remote.servers.find((item) => item.id === call.server)?.name || call.server.slice(0, 12)}/${call.task.project_name || call.task.project_id.slice(0, 12)}`,
-              text: "",
-              tool: {
-                kind: "task",
-                status: running(call.task)
-                  ? "running"
-                  : ["completed", "failed", "stopped"].includes(
-                        call.task.status,
-                      )
-                    ? (call.task.status as ToolSummary["status"])
-                    : "unknown",
-                version: String(call.task.status),
-                bytes: 0,
-                task: {
-                  id: call.task.task_id,
-                  agent_type: [
-                    call.task.agent,
-                    call.task.model,
-                    call.task.reasoning_effort,
-                  ]
-                    .filter(Boolean)
-                    .join(" · "),
-                  prompt: call.message,
-                  summary: running(call.task) ? call.task.progress : undefined,
-                },
-              },
-            }}
-            outcome={t(
-              call.task.status === "running"
-                ? "Running"
-                : call.task.status === "completed"
-                  ? "Completed"
-                  : call.task.status === "stopped"
-                    ? "Stopped"
-                    : call.task.status === "failed"
-                      ? "Failed"
-                      : call.task.status === "awaiting_approval"
-                        ? "Approval required"
-                        : "Interrupted",
-            )}
-          />
-          {call.task.status === "completed" && call.task.text && (
-            <MarkdownMessage t={t}>{call.task.text}</MarkdownMessage>
-          )}
-          {call.task.truncated && (
-            <p>{t("Output truncated. Read remote history for details.")}</p>
-          )}
-          {call.task.error && <p className="error">{call.task.error}</p>}
-          {call.task.pending_approval && (
-            <ApprovalCard
-              key={call.task.pending_approval.id}
-              request={call.task.pending_approval}
-              chatID={call.task.conversation_id}
-              turnID={call.task.turn_id ?? ""}
-              t={t}
-              onError={onError}
-              onDecision={(approval) => remote.approve(call, approval)}
-            />
-          )}
-          <div className="remote-agent-actions">
-            {running(call.task) ? (
-              <button type="button" onClick={() => void remote.cancel(call)}>
-                {t("Stop response")}
-              </button>
-            ) : (
+    <div className="remote-calls-control">
+      <button
+        ref={trigger}
+        type="button"
+        aria-haspopup="dialog"
+        onClick={() => setOpen(true)}
+      >
+        <History size={14} aria-hidden="true" />
+        <span>
+          {t("Remote agents")} · {remote.calls.length} ·{" "}
+          {remoteStatus(remote.calls[0].task, t)}
+        </span>
+        <ChevronRight size={14} aria-hidden="true" />
+      </button>
+      {open && <RemoteCallsDialog {...props} onClose={close} />}
+    </div>
+  );
+}
+
+function RemoteCallsDialog({
+  remote,
+  t,
+  onError,
+  onContext,
+  onClose,
+}: RemoteCallsProps & { onClose: (composer?: boolean) => void }) {
+  const dialog = useRef<HTMLDialogElement>(null);
+  const titleID = useId();
+  const [selected, setSelected] = useState<string>();
+  const [showHistory, setShowHistory] = useState(false);
+  const [history, setHistory] = useState<HistoryPage>();
+  const [loading, setLoading] = useState(false);
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState("");
+  const historyRequest = useRef(0);
+  const mounted = useRef(false);
+  useEffect(() => {
+    mounted.current = true;
+    const element = dialog.current;
+    element?.showModal();
+    return () => {
+      mounted.current = false;
+      historyRequest.current++;
+      element?.close();
+    };
+  }, []);
+  const call = remote.calls.find((item) => item.task.task_id === selected);
+  const title = showHistory
+    ? t("Remote history")
+    : call
+      ? remoteLabel(call, remote)
+      : t("Remote agents");
+  const report = (error: unknown) => {
+    if (!mounted.current) return;
+    setError(error instanceof Error ? error.message : String(error));
+    onError(error);
+  };
+  const readHistory = async (call: RemoteCall, before?: string) => {
+    const request = ++historyRequest.current;
+    setShowHistory(true);
+    setLoading(true);
+    setError("");
+    try {
+      const page = await remote.readHistory(call, before);
+      if (mounted.current && historyRequest.current === request)
+        setHistory(page);
+    } catch (error) {
+      if (historyRequest.current === request) report(error);
+    } finally {
+      if (mounted.current && historyRequest.current === request)
+        setLoading(false);
+    }
+  };
+  const back = () => {
+    historyRequest.current++;
+    setError("");
+    setLoading(false);
+    if (showHistory) {
+      setShowHistory(false);
+      setHistory(undefined);
+    } else setSelected(undefined);
+  };
+  const action = async (run: () => Promise<unknown>) => {
+    setBusy(true);
+    setError("");
+    try {
+      await run();
+    } catch (error) {
+      report(error);
+    } finally {
+      if (mounted.current) setBusy(false);
+    }
+  };
+  const result =
+    call &&
+    (call.task.status === "completed" ? call.task.text : call.task.progress);
+  return createPortal(
+    <dialog
+      ref={dialog}
+      className="remote-calls-dialog"
+      aria-labelledby={titleID}
+      onSubmit={(event) => {
+        // Portal events still bubble through the composer in React.
+        event.stopPropagation();
+      }}
+      onCancel={(event) => {
+        event.preventDefault();
+        onClose();
+      }}
+      onClick={(event) => {
+        if (event.target !== event.currentTarget) return;
+        const bounds = event.currentTarget.getBoundingClientRect();
+        if (
+          event.clientX < bounds.left ||
+          event.clientX > bounds.right ||
+          event.clientY < bounds.top ||
+          event.clientY > bounds.bottom
+        )
+          onClose();
+      }}
+    >
+      <div className="dialog-heading">
+        {call && (
+          <button
+            type="button"
+            className="icon"
+            aria-label={t("Back")}
+            onClick={back}
+          >
+            <ArrowLeft size={18} />
+          </button>
+        )}
+        <h2 id={titleID}>{title}</h2>
+        <button
+          type="button"
+          className="icon"
+          autoFocus
+          aria-label={t("Close")}
+          onClick={() => onClose()}
+        >
+          <X size={18} />
+        </button>
+      </div>
+      <div className="remote-calls-body">
+        {error && (
+          <p className="error" role="alert">
+            {error}
+          </p>
+        )}
+        {!call ? (
+          <div className="remote-calls-list" aria-label={t("Remote calls")}>
+            {remote.calls.map((call) => (
               <button
+                key={call.task.task_id}
                 type="button"
-                disabled={remote.busy}
-                onClick={() => void remote.resume(call)}
+                onClick={() => setSelected(call.task.task_id)}
               >
-                {t("Continue conversation")}
+                <span>
+                  {remoteLabel(call, remote)} · {remoteStatus(call.task, t)}
+                </span>
+                <ChevronRight size={16} aria-hidden="true" />
               </button>
-            )}
-            <button type="button" onClick={() => void remote.readHistory(call)}>
-              <History size={13} />
-              {t("Remote history")}
-            </button>
-            {call.task.status === "completed" && call.task.text && (
-              <button
-                type="button"
-                onClick={() => {
-                  const text = call.task.text!.slice(0, 16000);
-                  onContext(
-                    JSON.stringify({
-                      remote_server: call.server,
-                      remote_conversation: call.task.conversation_id,
-                      remote_task: call.task.task_id,
-                      reference_output: text,
-                      truncated:
-                        !!call.task.truncated ||
-                        text.length < call.task.text!.length,
-                    }),
-                  );
-                }}
-              >
-                {t("Use result as context")}
-              </button>
-            )}
+            ))}
           </div>
-        </article>
-      ))}
-      {remote.history && (
-        <section className="remote-agent-history">
-          <h3>{t("Remote history")}</h3>
-          {remote.history.turns.map((turn) => (
-            <article key={turn.id}>
-              {turn.messages.map((message, index) => (
-                <div key={index}>
-                  <small>{message.role}</small>
-                  <pre>{message.text}</pre>
-                </div>
-              ))}
-              {turn.truncated && (
-                <small>
-                  {t("Output truncated. Read remote history for details.")}
-                </small>
+        ) : showHistory ? (
+          <section className="remote-agent-history" aria-busy={loading}>
+            {loading && <p role="status">{t("Loading conversation…")}</p>}
+            {history?.turns.map((turn) => (
+              <article key={turn.id}>
+                {turn.messages.map((message, index) => (
+                  <div className="remote-history-message" key={index}>
+                    <small>{message.role}</small>
+                    {message.role === "user" ? (
+                      <p className="remote-call-input">{message.text}</p>
+                    ) : (
+                      <MarkdownMessage t={t}>{message.text}</MarkdownMessage>
+                    )}
+                  </div>
+                ))}
+                {turn.truncated && (
+                  <p>
+                    {t("Output truncated. Read remote history for details.")}
+                  </p>
+                )}
+              </article>
+            ))}
+            {history?.next && (
+              <button
+                type="button"
+                disabled={loading}
+                onClick={() => void readHistory(call, history.next)}
+              >
+                {t("Load older messages")}
+              </button>
+            )}
+          </section>
+        ) : (
+          <article className="remote-agent-task" key={call.task.task_id}>
+            <p className="remote-agent-heading" role="status">
+              {[
+                call.task.agent,
+                call.task.model,
+                call.task.reasoning_effort,
+                remoteStatus(call.task, t),
+              ]
+                .filter(Boolean)
+                .join(" · ")}
+            </p>
+            {call.message && (
+              <p className="remote-call-input">{call.message}</p>
+            )}
+            {result && <MarkdownMessage t={t}>{result}</MarkdownMessage>}
+            {call.task.truncated && (
+              <p>{t("Output truncated. Read remote history for details.")}</p>
+            )}
+            {call.task.error && <p className="error">{call.task.error}</p>}
+            {call.task.pending_approval && (
+              <ApprovalCard
+                key={call.task.pending_approval.id}
+                request={call.task.pending_approval}
+                chatID={call.task.conversation_id}
+                turnID={call.task.turn_id ?? ""}
+                t={t}
+                onError={report}
+                onDecision={(approval) => remote.approve(call, approval)}
+              />
+            )}
+            <div className="remote-agent-actions">
+              {running(call.task) ? (
+                <button
+                  type="button"
+                  disabled={busy}
+                  onClick={() => void action(() => remote.cancel(call))}
+                >
+                  {t("Stop response")}
+                </button>
+              ) : (
+                <button
+                  type="button"
+                  disabled={busy || remote.busy}
+                  onClick={() =>
+                    void action(async () => {
+                      if ((await remote.resume(call)) && mounted.current)
+                        onClose(true);
+                    })
+                  }
+                >
+                  {t("Continue conversation")}
+                </button>
               )}
-            </article>
-          ))}
-          {remote.history.next && (
-            <button
-              type="button"
-              onClick={() => {
-                const call = remote.calls.find(
-                  (item) =>
-                    item.task.conversation_id ===
-                    remote.history?.conversation_id,
-                );
-                if (call) void remote.readHistory(call, remote.history!.next);
-              }}
-            >
-              {t("Load older messages")}
-            </button>
-          )}
-        </section>
-      )}
-    </section>
+              <button type="button" onClick={() => void readHistory(call)}>
+                <History size={13} aria-hidden="true" />
+                {t("Remote history")}
+              </button>
+              {call.task.status === "completed" && call.task.text && (
+                <button
+                  type="button"
+                  onClick={() => {
+                    const text = call.task.text!.slice(0, 16000);
+                    onContext(
+                      JSON.stringify({
+                        remote_server: call.server,
+                        remote_conversation: call.task.conversation_id,
+                        remote_task: call.task.task_id,
+                        reference_output: text,
+                        truncated:
+                          !!call.task.truncated ||
+                          text.length < call.task.text!.length,
+                      }),
+                    );
+                    onClose(true);
+                  }}
+                >
+                  {t("Use result as context")}
+                </button>
+              )}
+            </div>
+          </article>
+        )}
+      </div>
+    </dialog>,
+    document.body,
   );
 }

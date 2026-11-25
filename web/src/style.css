@@ -5121,7 +5121,7 @@ option {
 .remote-target-chip button {
   font: inherit;
 }
-.remote-target-chip button:not(.icon), .remote-agent-actions button, .remote-agent-history > button {
+.remote-target-chip button:not(.icon), .remote-calls-control > button, .remote-agent-actions button, .remote-agent-history > button {
   padding: 5px 8px;
   border: 1px solid var(--line);
   border-radius: 7px;
@@ -5131,24 +5131,101 @@ option {
   font-size: 12px;
   cursor: pointer;
 }
-.remote-target-chip button:not(.icon):hover, .remote-agent-actions button:hover, .remote-agent-history > button:hover {
+.remote-target-chip button:not(.icon):hover, .remote-calls-control > button:hover, .remote-agent-actions button:hover, .remote-agent-history > button:hover {
   background: var(--hover);
 }
 .remote-target-menu .remote-server-next {
   margin-left: auto;
 }
-.remote-calls {
+.remote-calls-control {
   min-width: 0;
-  margin: 20px 0;
+  margin: 8px 14px 0;
+}
+.remote-calls-control > button {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  max-width: 100%;
+  text-align: left;
+}
+.remote-calls-control > button span {
+  min-width: 0;
+  overflow-wrap: anywhere;
+}
+.remote-calls-control > button svg {
+  flex-shrink: 0;
+}
+.remote-calls-dialog {
+  width: min(640px, calc(100vw - 32px));
+  max-width: calc(100vw - 32px);
+  max-height: calc(100dvh - 40px);
+  padding: 0;
+  border: 1px solid var(--border-strong);
+  border-radius: 18px;
+  background: var(--elevated);
+  color: var(--text);
+  box-shadow: 0 20px 100px #0004;
+  overflow: hidden;
+}
+.remote-calls-dialog[open] {
+  display: flex;
+  flex-direction: column;
+}
+.remote-calls-dialog::backdrop {
+  background: #0007;
+}
+.remote-calls-dialog > .dialog-heading {
+  flex-shrink: 0;
+  margin: 0;
+  padding: 16px;
+  border-bottom: 1px solid var(--line);
+}
+.remote-calls-dialog .dialog-heading h2 {
+  flex: 1;
+  min-width: 0;
+  font-size: 16px;
+  overflow-wrap: anywhere;
+}
+.remote-calls-body {
+  min-height: 0;
+  padding: 16px;
+  overflow: auto;
+  overscroll-behavior: contain;
+}
+.remote-calls-list {
+  display: grid;
+  gap: 8px;
+}
+.remote-calls-list > button {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  width: 100%;
+  padding: 12px;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  background: var(--surface);
+  color: var(--text);
+  font: inherit;
+  font-size: 13px;
+  text-align: left;
+  overflow-wrap: anywhere;
+  cursor: pointer;
+}
+.remote-calls-list > button:hover {
+  background: var(--hover);
+}
+.remote-calls-list > button span {
+  min-width: 0;
+}
+.remote-calls-list > button svg {
+  flex-shrink: 0;
 }
 .slash-command-next { margin-left: auto; }
 .composer-mcp-chips { display: flex; flex-wrap: wrap; padding: 4px 12px; gap: 6px; }
 .composer-mcp-chip { display: inline-flex; align-items: center; gap: 5px; padding: 3px 7px; border-radius: 8px; background: var(--soft); font-size: 12px; }
-.remote-calls h3 {
-  font-size: 13px;
-  font-weight: 500;
-}
-.remote-calls p, .remote-calls small {
+.remote-calls-dialog p, .remote-calls-dialog small {
   font-size: 12px;
   line-height: 1.6;
   overflow-wrap: anywhere;
@@ -5172,21 +5249,24 @@ option {
   gap: 5px;
   font-size: 12px;
 }
-.remote-calls pre {
-  white-space: pre-wrap;
-  overflow-wrap: anywhere;
-  font: inherit;
-  font-size: 13px;
-  line-height: 1.6;
-  max-height: 480px;
-  overflow: auto;
-}
 .remote-call-input {
-  padding: 0 12px;
+  padding: 10px 12px;
   border-radius: 10px;
   background: var(--soft);
+  white-space: pre-wrap;
 }
-.remote-agent-task, .remote-agent-history article {
+.remote-agent-history article + article {
   border-top: 1px solid var(--line);
   padding: 14px 0;
+}
+.remote-agent-task > :first-child {
+  margin-top: 0;
+}
+.remote-history-message + .remote-history-message {
+  margin-top: 16px;
+}
+.remote-history-message > small {
+  display: block;
+  margin-bottom: 6px;
+  color: var(--muted);
 }
