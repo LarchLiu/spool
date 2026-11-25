@@ -12,6 +12,7 @@ import (
 	"strings"
 	"sync"
 	"testing"
+	"time"
 
 	"github.com/egoist/mygo"
 	"spool/relay"
@@ -488,6 +489,133 @@ func TestDesktopOrdinaryTabNeverStartsFederation(t *testing.T) {
 	}
 	if len(p.jobs) != 0 || fixture.issued != 0 || p.store.sets != 0 || p.federation.attempt != nil {
 		t.Fatal("ordinary selection started a trusted login")
+	}
+}
+
+func newAutomaticFederationPanel(t *testing.T) (*federationPanel, *federationFixture, desktopServer) {
+	t.Helper()
+	p := newFederationPanel(t)
+	fixture := p.useSource(t, "https://b.example")
+	p.refreshDesktopFederationTargets(p.source.ID, p.sourceChat)
+	p.jobs[0](t.Context())()
+	p.jobs = nil
+	profiles, trusted, err := p.servers.trustedProfile(p.destination, p.source.ID, testFederationTarget, p.sourceChat.federationFingerprint)
+	if err != nil {
+		t.Fatal(err)
+	}
+	trusted.Enabled = true
+	p.servers, err = profiles.save(trusted)
+	if err != nil {
+		t.Fatal(err)
+	}
+	mount := desktopServerMount(trusted)
+	upstream, err := url.Parse(fixture.destinationURL)
+	if err != nil {
+		t.Fatal(err)
+	}
+	fixture.gateway.mu.Lock()
+	fixture.gateway.routes[mount] = remoteDesktopAPI(upstream, mount)
+	fixture.gateway.mu.Unlock()
+	p.chat = &desktopServerChat{loaded: true, status: "login", pageStatus: "login", address: fixture.gateway.url + mount}
+	p.serverChats[trusted.ID] = p.chat
+	return p, fixture, trusted
+}
+
+func TestDesktopFederationSignsInTrustedProfilesInBackground(t *testing.T) {
+	for _, scenario := range []string{"background", "selected", "join", "revoked", "account changed", "route changed", "switch"} {
+		t.Run(scenario, func(t *testing.T) {
+			p, fixture, trusted := newAutomaticFederationPanel(t)
+			if scenario == "selected" {
+				p.servers.Selected = trusted.ID
+			}
+			selected := p.servers.Selected
+			p.advanceDesktopFederation()
+			a := p.federation.attempt
+			if a == nil || !a.background || a.phase != "working" || len(p.jobs) != 1 {
+				t.Fatalf("background login not started: attempt=%+v jobs=%d", a, len(p.jobs))
+			}
+			pending := p.desktopServerTabsFor(trusted.ID).FederationPending
+			if pending == nil || pending.Source != p.source.ID || pending.Target != testFederationTarget {
+				t.Fatalf("background progress missing: %+v", pending)
+			}
+			p.advanceDesktopFederation()
+			if scenario == "join" {
+				for range 3 {
+					p.selectDesktopFederationTab(p.source.ID, p.sourceChat, desktopFederationSelection{source: p.source.ID, target: testFederationTarget})
+				}
+				if p.federation.attempt != a || a.background || len(p.jobs) != 1 {
+					t.Fatal("repeated clicks replaced or duplicated the exchange")
+				}
+			}
+			apply := p.jobs[0](t.Context())
+			switch scenario {
+			case "revoked":
+				p.recordDesktopFederationTargets(p.sourceChat, nil)
+			case "account changed":
+				p.sourceChat.federationFingerprint = "new-source-session"
+			case "route changed":
+				for i := range p.servers.Entries {
+					if p.servers.Entries[i].ID == trusted.ID {
+						p.servers.Entries[i].Address = "https://elsewhere.example/"
+					}
+				}
+			case "switch":
+				p.servers.Selected = localDesktopServer
+				selected = localDesktopServer
+			}
+			apply()
+			for i := 1; i < len(p.jobs); i++ {
+				p.jobs[i](t.Context())()
+			}
+			writes := 1
+			if scenario == "revoked" || scenario == "account changed" || scenario == "route changed" {
+				writes = 0
+			}
+			if fixture.issued != 1 || fixture.exchanged != 1 || p.store.sets != writes || p.federation.attempt != nil || p.servers.Selected != selected {
+				t.Fatalf("issued=%d exchanged=%d writes=%d selected=%s attempt=%+v", fixture.issued, fixture.exchanged, p.store.sets, p.servers.Selected, p.federation.attempt)
+			}
+			if p.desktopServerTabs().FederationPending != nil || (len(p.presented) != 0) != (scenario == "join") {
+				t.Fatalf("unexpected progress or foreground navigation: %+v %v", p.desktopServerTabs(), p.presented)
+			}
+		})
+	}
+}
+
+func TestDesktopAutomaticFederationRequiresCurrentSourceAndSignedOutTarget(t *testing.T) {
+	for _, scenario := range []string{"signed in", "not loaded", "unreachable", "source signed out", "source revoked", "source changed", "disabled", "ordinary", "cooldown"} {
+		t.Run(scenario, func(t *testing.T) {
+			p, fixture, trusted := newAutomaticFederationPanel(t)
+			switch scenario {
+			case "signed in":
+				p.chat.authenticated = true
+			case "not loaded":
+				p.chat.loaded = false
+			case "unreachable":
+				p.chat.healthFailed = true
+			case "source signed out":
+				p.sourceChat.authenticated = false
+			case "source revoked":
+				p.sourceChat.federationTargets = nil
+			case "source changed":
+				p.sourceChat.federationFingerprint = "new-source-session"
+			case "cooldown":
+				p.chat.lastFederationAttempt = time.Now()
+			case "disabled", "ordinary":
+				for i := range p.servers.Entries {
+					if p.servers.Entries[i].ID == trusted.ID {
+						if scenario == "disabled" {
+							p.servers.Entries[i].Enabled = false
+						} else {
+							p.servers.Entries[i].FederationTarget = ""
+						}
+					}
+				}
+			}
+			p.advanceDesktopFederation()
+			if len(p.jobs) != 0 || fixture.issued != 0 || p.federation.attempt != nil {
+				t.Fatal("started an automatic exchange without an eligible trusted session")
+			}
+		})
 	}
 }
 

@@ -46,6 +46,7 @@ import {
   subscribeDesktopServers,
   subscribeDesktopServerSelection,
   connectDesktopServer,
+  requestDesktopFederationLogin,
 } from "./runtime";
 import { DesktopSettingsLink } from "./desktop-settings";
 import { DesktopServerWelcome } from "./desktop-servers";
@@ -262,9 +263,15 @@ function App() {
   // Native availability checks keep cached login pages current even when their
   // renderer is suspended. Report the page's own state so those checks continue
   // through an outage and can detect recovery.
-  const desktopConnectionState = desktopPageState === "login" && desktopServer?.status === "error"
-    ? "error"
-    : desktopPageState;
+  const desktopFederationPending = desktopServer?.federation_source &&
+    servers.federation_pending?.source === desktopServer.federation_source &&
+    servers.federation_pending.target === desktopServer.federation_target;
+  const desktopConnectionState = desktopFederationPending ||
+    (!user && desktopServer?.federation_target && desktopServer.status === "connecting")
+    ? "connecting"
+    : desktopPageState === "login" && desktopServer?.status === "error"
+      ? "error"
+      : desktopPageState;
   const [groupPicker, setGroupPicker] = useState<string | null>(null);
   const chatWindowBounds = useRef<FloatingWindowBounds | null>(null);
   const rememberChatWindowBounds = useCallback((bounds: FloatingWindowBounds) => {
@@ -2290,7 +2297,10 @@ function App() {
   );
   const serverStart = isDesktopChat() && !user;
   const connectServer = () => {
-    if (!serverAvailable || user) connectDesktopServer();
+    if (desktopFederationPending) return;
+    if (!user && desktopServer?.federation_source && desktopServer.federation_target)
+      requestDesktopFederationLogin(desktopServer.federation_source, desktopServer.federation_target);
+    else if (!serverAvailable || user) connectDesktopServer();
     else setDesktopLoginOpen(true);
   };
   if (!ready && !isDesktopChat())

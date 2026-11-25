@@ -219,7 +219,10 @@ function serverOptions(
       const key = federationTabKey(source.id, target.id);
       aliases.set(key, { source: source.id, target: target.id });
       if (saved) savedAliases.set(saved.id, key);
-      return [federationOption(t, source, target, progress[key], saved)];
+      const pending = servers.federation_pending;
+      const current = pending?.source === source.id && pending.target === target.id
+        ? pending : progress[key];
+      return [federationOption(t, source, target, current, saved)];
     }),
   );
   const selection = (id: string, _alias?: string) => savedAliases.get(id) ?? id;

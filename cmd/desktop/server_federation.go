@@ -47,6 +47,7 @@ type desktopFederationAttempt struct {
 	origin            string
 	originChat        *desktopServerChat
 	grouped           bool
+	background        bool
 	scrollLeft        *float64
 	sourceFingerprint string
 	// resolving, confirming, waiting, network, enrolling, working, storing, or committing.
@@ -531,6 +532,9 @@ func (p *panel) emitDesktopFederation(chat *desktopServerChat, state desktopFede
 }
 
 func (p *panel) emitDesktopFederationAttempt(a *desktopFederationAttempt, state, reason string) {
+	if a.background {
+		return
+	}
 	if p.serverChats[a.origin] == a.originChat {
 		p.emitDesktopFederation(a.originChat, desktopFederationState{Target: a.target, Source: a.source, State: state, Reason: reason})
 	}
@@ -542,6 +546,7 @@ func (p *panel) failDesktopFederation(reason string) {
 		return
 	}
 	p.federation.attempt = nil
+	p.sendDesktopServers()
 	p.emitDesktopFederationAttempt(a, "failed", reason)
 }
 
@@ -551,12 +556,13 @@ func (p *panel) finishDesktopFederation(reload bool) {
 		return
 	}
 	p.federation.attempt = nil
+	defer p.sendDesktopServers()
 	if a.chat != nil && a.exchanged {
 		// Its session came from this exchange with the identified server.
 		a.chat.serverID, a.chat.federated = a.target, true
 	}
 	p.emitDesktopFederationAttempt(a, "done", "")
-	if p.federation.present != nil {
+	if !a.background && p.federation.present != nil {
 		if !a.detached {
 			p.federation.present(a.server.ID, reload)
 		}
@@ -568,7 +574,7 @@ func (p *panel) finishDesktopFederation(reload bool) {
 		_ = p.loadDesktopServerChat(a.server.ID, a.chat.address)
 	}
 	// 写入一旦发起就不能取消，但不应再覆盖用户随后的标签选择。
-	if !a.detached && p.window != nil && p.selectedDesktopServer() == a.origin {
+	if !a.background && !a.detached && p.window != nil && p.selectedDesktopServer() == a.origin {
 		tab := ""
 		if a.grouped {
 			tab = desktopFederationTabKey(a.source, a.target)
@@ -614,6 +620,13 @@ func (p *panel) startDesktopFederationFrom(origin string, page *desktopServerCha
 	}
 	if old := p.federation.attempt; old != nil {
 		if old.sourceChat == chat && old.target == target {
+			// A click joins the existing background exchange and requests its
+			// destination when it finishes, without issuing another ticket.
+			if old.background {
+				old.background = false
+				old.origin, old.originChat, old.scrollLeft = origin, page, scrollLeft
+				p.emitDesktopFederationAttempt(old, "pending", "")
+			}
 			return
 		}
 		if old.phase == "committing" {
@@ -623,6 +636,7 @@ func (p *panel) startDesktopFederationFrom(origin string, page *desktopServerCha
 		p.failDesktopFederation("cancelled")
 	}
 	p.federation.attempt = a
+	p.sendDesktopServers()
 	server, _ := p.servers.find(source)
 	site := p.desktopFederationSite(server, chat)
 	fingerprint := chat.federationFingerprint
@@ -1080,10 +1094,13 @@ func (p *panel) attachDesktopFederation(a *desktopFederationAttempt, server desk
 }
 
 func (p *panel) desktopFederationSourceCurrent(a *desktopFederationAttempt) bool {
-	if p.selectedDesktopServer() != a.origin || p.serverChats[a.origin] != a.originChat {
+	if !a.background && (p.selectedDesktopServer() != a.origin || p.serverChats[a.origin] != a.originChat) {
 		return false
 	}
 	if a.sourceChat == nil || p.serverChats[a.source] != a.sourceChat || !a.sourceChat.authenticated || a.sourceChat.failed {
+		return false
+	}
+	if a.background && a.sourceChat.federationFingerprint != a.sourceFingerprint {
 		return false
 	}
 	if a.grouped {
@@ -1116,6 +1133,7 @@ func (p *panel) desktopFederationBlocked(a *desktopFederationAttempt) string {
 func (p *panel) advanceDesktopFederation() {
 	a := p.federation.attempt
 	if a == nil {
+		p.startAutomaticDesktopFederation(time.Now())
 		return
 	}
 	if p.quitting {
@@ -1185,9 +1203,58 @@ func (p *panel) advanceDesktopFederation() {
 	p.exchangeDesktopFederation(a, work)
 }
 
+// Reconnect only an existing trusted profile owned by the source's current
+// account. Ordinary profiles and anonymous target probes never issue tickets.
+// The shared attempt serializes automatic and explicit sign-ins.
+func (p *panel) startAutomaticDesktopFederation(now time.Time) {
+	if p.quitting || p.federation.attempt != nil {
+		return
+	}
+	for _, server := range p.servers.Entries {
+		chat := p.serverChats[server.ID]
+		source := p.serverChats[server.FederationSource]
+		if !server.Enabled || server.FederationTarget == "" || chat == nil || !chat.loaded || chat.failed || chat.authenticated || chat.pageStatus != "login" || chat.healthFailed ||
+			source == nil || !source.authenticated || source.failed || source.federationFingerprint == "" || source.federationFingerprint != server.FederationAccount ||
+			now.Sub(chat.lastFederationAttempt) < 30*time.Second {
+			continue
+		}
+		a := &desktopFederationAttempt{
+			source: server.FederationSource, sourceChat: source, sourceFingerprint: server.FederationAccount,
+			target: server.FederationTarget, server: server, chat: chat,
+			grouped: true, background: true, phase: "waiting", started: now,
+		}
+		if !p.desktopFederationSourceCurrent(a) {
+			continue
+		}
+		// Keep the same route checks used during explicit resolution. HTTPS
+		// must still be published by the source; Relay must pin the target.
+		if server.Mode == "relay" {
+			if desktopRelayServerID(server) != a.target {
+				continue
+			}
+		} else if server.ConnectionID != localDesktopServer {
+			peer := source.federationTargets[slices.IndexFunc(source.federationTargets, func(peer desktopFederationTarget) bool { return peer.ID == a.target })]
+			if peer.ClientMode == "relay" {
+				continue
+			}
+			a.publishedMode = &peer.ClientMode
+			a.address = desktopFederationClientAddress(server.Address)
+			if a.address == "" {
+				continue
+			}
+		}
+		chat.lastFederationAttempt = now
+		p.federation.attempt = a
+		p.sendDesktopServers()
+		p.advanceDesktopFederation()
+		return
+	}
+}
+
 func (p *panel) exchangeDesktopFederation(a *desktopFederationAttempt, work desktopFederationWork) {
 	store := p.desktopFederationCookies()
 	a.phase = "working"
+	a.chat.lastFederationAttempt = time.Now()
 	p.runDesktopFederation(func(lifetime context.Context) func() {
 		ctx, cancel := context.WithTimeout(lifetime, 20*time.Second)
 		outcome := work.exchange(ctx, desktopFederationClient(), store)

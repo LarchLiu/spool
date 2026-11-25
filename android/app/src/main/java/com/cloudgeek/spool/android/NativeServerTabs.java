@@ -84,10 +84,12 @@ final class NativeServerTabs extends NativeTabs {
         }
         for (NativeFederation.Tab entry : trusted) {
             Button tab = button(entry.key()); if (tab == null) continue;
+            boolean pending = "signing-in".equals(states.get(entry.key()));
+            tab.setEnabled(!pending);
             ServerProfiles.Server server = entry.server;
             String description = entry.source.displayName() + " → " + (server == null ? entry.target.name
                     : server.displayName() + ", " + connectionStatus(tab, server, states));
-            describe(tab, description + ", " + ui.t("Trusted server"));
+            describe(tab, description + ", " + ui.t(pending ? "Signing in…" : "Trusted server"));
             if ((selected.isEmpty() || entry.key().equals(selectedFederationTab)) && server != null && server.id.equals(profiles.selected))
                 selected = entry.key();
         }

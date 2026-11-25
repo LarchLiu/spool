@@ -233,6 +233,89 @@ public class MainActivityServerTabsTest {
 
     private static MainActivityGoalTest.ShadowClient clientShadow(Client client) { return Shadow.extract(client); }
 
+    @Test public void backgroundTrustedSignInKeepsTheCurrentTabAndCoalescesRetries() throws Exception {
+        checkAutomaticTrustedSignIn("background");
+        checkAutomaticTrustedSignIn("selected");
+    }
+
+    @Test public void automaticTrustedSignInDiscardsRevokedSourcesAndChangedTargets() throws Exception {
+        checkAutomaticTrustedSignIn("revoked");
+        checkAutomaticTrustedSignIn("changed");
+        checkAutomaticTrustedSignIn("stopped");
+    }
+
+    private void checkAutomaticTrustedSignIn(String scenario) throws Exception {
+        String id = "b".repeat(52);
+        JSONArray allowed = target(id, "Office", "https://office.example.com");
+        try (Fixture f = new Fixture(true, allowed)) {
+            clientShadow(f.homeClient).responses = call -> reply(200, call.get(1).equals("/api/me")
+                    ? "{user:{id:'alice'},csrf:'shared-csrf'}" : allowed);
+            ServerProfiles.Server home = f.servers.active();
+            ServerProfiles.Server trusted = f.servers.trustedProfile(f.office, home, id, NativeFederation.accountKey("alice", "shared-csrf"));
+            trusted.enabled = true;
+            spoolnet.FederationSession exchange = Shadow.newInstanceOf(spoolnet.FederationSession.class);
+            ShadowFederationSession result = Shadow.extract(exchange);
+            List<Client> destinations = new ArrayList<>();
+            clientShadow(f.homeClient).federationPreparation = (destination, target, account, language) -> {
+                assertEquals(id, target); assertEquals("alice", account);
+                destinations.add(destination); return exchange;
+            };
+            f.h.call("refreshServerConnections"); f.drainConnections();
+            String key = NativeFederation.tabKey(f.home, id);
+            assertEquals(f.home, f.servers.selected);
+            assertEquals("connecting", f.status(trusted.id));
+            assertFalse(f.tabs().button(key).isEnabled());
+            assertTrue(f.tabs().button(key).getContentDescription().toString().contains("Signing in…"));
+            f.h.call("refreshServerConnections"); f.drainConnections();
+            if (scenario.equals("selected")) {
+                f.select(trusted.id);
+                assertNull("A trusted profile must never show the password form", f.h.get("password"));
+                NativeSidebar sidebar = f.h.get("sidebar");
+                View action = sidebar.connection;
+                assertNotNull(action); assertFalse(action.isEnabled());
+                f.h.call("loginFromSidebar"); f.h.call("loginFromSidebar");
+            } else if (scenario.equals("revoked")) f.push(f.homeClient, "federation_targets", "[]");
+            else if (scenario.equals("changed")) trusted.plan = new ConnectionPlan("https://changed.example.com", "", ConnectionMode.DIRECT);
+            else if (scenario.equals("stopped")) f.h.controller.pause().stop();
+            f.drain();
+            assertEquals(1, destinations.size());
+            assertEquals(scenario.equals("background") || scenario.equals("selected") ? 1 : 0, result.activations);
+            assertEquals(scenario.equals("selected") ? trusted.id : f.home, f.servers.selected);
+            if (scenario.equals("selected")) {
+                assertEquals("external-office", f.h.<JSONObject>get("user").getString("id"));
+                assertNull(f.h.get("password"));
+            } else assertEquals("alice", f.h.<JSONObject>get("user").getString("id"));
+            assertEquals(0, clientShadow(f.officeClient).closes);
+        }
+    }
+
+    @Test public void trustedSidebarSignInRetriesDirectlyAndNeverOpensThePasswordForm() throws Exception {
+        String id = "b".repeat(52);
+        JSONArray allowed = target(id, "Office", "https://office.example.com");
+        try (Fixture f = new Fixture(true, allowed)) {
+            clientShadow(f.homeClient).responses = call -> reply(200, call.get(1).equals("/api/me")
+                    ? "{user:{id:'alice'},csrf:'shared-csrf'}" : allowed);
+            ServerProfiles.Server trusted = f.servers.trustedProfile(f.office, f.servers.active(), id, NativeFederation.accountKey("alice", "shared-csrf"));
+            trusted.enabled = true;
+            clientShadow(f.homeClient).federationPreparation = (destination, target, account, language) -> { throw new IllegalStateException("Try again"); };
+            f.h.call("refreshServerConnections"); f.drainConnections(); f.drain();
+            f.select(trusted.id); f.drain();
+            f.h.call("closeDrawer");
+            assertNull(f.h.get("password"));
+            List<Client> destinations = new ArrayList<>();
+            clientShadow(f.homeClient).federationPreparation = (destination, target, account, language) -> {
+                destinations.add(destination); return Shadow.newInstanceOf(spoolnet.FederationSession.class);
+            };
+            f.h.call("loginFromSidebar"); f.h.call("loginFromSidebar");
+            f.h.call("render");
+            assertNull(f.h.get("password"));
+            assertFalse(f.h.<NativeConnecting>get("connectingView").retry.isEnabled());
+            f.drain();
+            assertEquals(1, destinations.size());
+            assertEquals("external-office", f.h.<JSONObject>get("user").getString("id"));
+        }
+    }
+
     @Test public void newTrustedTailscaleServerExposesEnrollmentAndRetriesTheChosenAccount() throws Exception {
         checkTrustedTailscaleEnrollment(false);
     }

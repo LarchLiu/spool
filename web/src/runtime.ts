@@ -30,6 +30,8 @@ export type DesktopServerConnection = {
   authenticated: boolean;
 };
 export type DesktopServerTabsSnapshot = {
+  // Native owns the exchange, including when its destination is in the background.
+  federation_pending?: DesktopFederationProgress;
   sidebar_width?: number;
   selection?: string;
   selected_tab?: string;

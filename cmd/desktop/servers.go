@@ -47,6 +47,7 @@ type desktopServerChat struct {
 	federationFingerprint string
 	federationRevision    uint64
 	federationChecking    bool
+	lastFederationAttempt time.Time
 }
 
 func (chat *desktopServerChat) setStatus(status string) bool {
@@ -74,12 +75,13 @@ type desktopServerTab struct {
 }
 
 type desktopServerTabs struct {
-	Entries      []desktopServerTab    `json:"entries"`
-	Selected     string                `json:"selected"`
-	SelectedTab  string                `json:"selected_tab,omitempty"`
-	Selection    string                `json:"selection"`
-	SidebarWidth int                   `json:"sidebar_width"`
-	Transition   *desktopTabTransition `json:"transition,omitempty"`
+	Entries           []desktopServerTab      `json:"entries"`
+	Selected          string                  `json:"selected"`
+	SelectedTab       string                  `json:"selected_tab,omitempty"`
+	Selection         string                  `json:"selection"`
+	SidebarWidth      int                     `json:"sidebar_width"`
+	Transition        *desktopTabTransition   `json:"transition,omitempty"`
+	FederationPending *desktopFederationState `json:"federation_pending,omitempty"`
 }
 
 // The incoming cached page continues the outgoing tab indicator's animation.
@@ -137,6 +139,9 @@ func (p *panel) selectedDesktopServer() string {
 func (p *panel) desktopServerTabs() desktopServerTabs {
 	tabs := desktopServerTabs{Selected: p.selectedDesktopServer(), SelectedTab: p.federation.selectedTab, SidebarWidth: p.servers.SidebarWidth, Transition: p.serverTabTransition}
 	tabs.Selection = p.desktopSelectionToken()
+	if a := p.federation.attempt; a != nil {
+		tabs.FederationPending = &desktopFederationState{Source: a.source, Target: a.target, State: "pending"}
+	}
 	if tabs.SidebarWidth == 0 {
 		tabs.SidebarWidth = 298
 	}

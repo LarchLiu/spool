@@ -241,6 +241,28 @@ test("federation navigation sends the source and target without credentials or a
   ]);
 });
 
+test("native background sign-in disables the trusted tab on every page", () => {
+  const target = "a".repeat(52);
+  const servers = {
+    selected: "trusted",
+    federation_pending: { source: "home", target, state: "pending" },
+    entries: [
+      { id: "home", name: "Home", local: false, status: "connected", federation_targets: [{ id: target, name: "Lab" }] },
+      { id: "trusted", name: "Lab", local: false, status: "login", federation_source: "home", federation_target: target },
+    ],
+  };
+  const t = (key, values) => key.replace("{server}", values?.server ?? "");
+  const render = (snapshot) => renderToStaticMarkup(createElement(DesktopServerTabBar, { t, servers: snapshot }));
+  for (const selected of ["trusted", "home"]) {
+    const html = render({ ...servers, selected });
+    const tab = html.match(/<button\b[^>]*aria-label="Home → Signing in to Lab…"[^>]*>/)?.[0];
+    assert.ok(tab?.includes('disabled=""'));
+    assert.match(html, /lucide-loader-circle/);
+  }
+  const finished = render({ ...servers, federation_pending: undefined });
+  assert.doesNotMatch(finished, /disabled=""|Signing in to Lab/);
+});
+
 test("server snapshots and subscriptions reject malformed/browser surfaces", () => {
   for (const value of [
     null,

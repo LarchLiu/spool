@@ -87,7 +87,12 @@ saves that route automatically. Tailscale is temporarily hidden in trust setting
 ordinary Tailscale connections remain available. Selecting a signed-in trusted entry
 restores its cached page directly. On first sign-in or session expiry, its spinner
 indicates source authorization, destination identity checks, a one-time ticket
-exchange and session storage. Ordinary tabs use their own login and do not
+exchange and session storage. The trusted workspace's **Sign in** button starts
+that same flow; its controls and trusted tab remain disabled while it runs.
+Enabled trusted profiles also sign in automatically when their background
+connection confirms they are signed out. Completion keeps the current tab;
+changes to the source account or authorization stop the exchange.
+Ordinary tabs use their own login and do not
 automatically borrow a trusted source.
 
 Manage people on the destination host. An external user appears in

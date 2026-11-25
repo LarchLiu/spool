@@ -228,6 +228,8 @@ public final class MainActivity extends Activity {
         ConnectionRouter.Candidate<Client> candidate;
         ServerFeed feed;
         boolean selecting, socketFailed;
+        Object federationSignIn;
+        long lastFederationAttempt;
         int sessionEpoch;
         final Map<ConnectionMode, String> states = new java.util.EnumMap<>(ConnectionMode.class);
         final Map<ConnectionPlan.Endpoint, ConnectionRecovery.Snapshot> health = new HashMap<>();
@@ -251,6 +253,7 @@ public final class MainActivity extends Activity {
     private ServerRuntime federationRuntime;
     private FederationEnrollment federationEnrollment;
     private boolean federationRelayLoading;
+    private String federationPendingTab = "";
     private String selectedFederationTab = "";
     private String restoringTrustedServer = "";
     private final Runnable serverRefresh = this::refreshServerConnections;
@@ -774,6 +777,7 @@ public final class MainActivity extends Activity {
         loginSubmit = null;
         if (sidebarPageDeferred && reopenSidebar) { /* The selected server's page is built when the drawer closes. */ }
         else if (restoringSession && routeLoginRequired) connectingPage();
+        else if ((routeLoginRequired || user == null) && serverProfiles.active() != null && serverProfiles.active().trusted()) connectingPage();
         else if (routeLoginRequired) loginPage();
         else if (user == null && restoringSession) connectingPage();
         else if (user == null) loginPage();
@@ -908,6 +912,8 @@ public final class MainActivity extends Activity {
     private void connectingPage() {
         NativeConnecting page = new NativeConnecting(ui, connectionMessage, this::retrySession, this::openSettings);
         connectingView = page;
+        ServerRuntime runtime = serverRuntimes.get(serverProfiles.selected);
+        page.bind(connectionMessage, connecting || routeSelecting || sessionCheckBusy || runtime != null && runtime.federationSignIn != null);
         FrameLayout.LayoutParams menu = new FrameLayout.LayoutParams(dp(32), dp(32), Gravity.TOP | Gravity.START);
         menu.topMargin = (dp(50) - dp(1) - dp(32)) / 2; menu.setMarginStart(dp(16));
         page.addView(ui.sidebarButton(this::openSidebar), menu);
@@ -915,11 +921,13 @@ public final class MainActivity extends Activity {
     }
 
     private void updateConnectingPage() {
-        if (connectingView != null) connectingView.bind(connectionMessage, connecting || routeSelecting || sessionCheckBusy);
+        ServerRuntime runtime = serverRuntimes.get(serverProfiles.selected);
+        if (connectingView != null) connectingView.bind(connectionMessage, connecting || routeSelecting || sessionCheckBusy || runtime != null && runtime.federationSignIn != null);
         updateConnectionSettings(); renderNavigation();
     }
 
     private void retrySession() {
+        if (serverProfiles.active() != null && serverProfiles.active().trusted()) { loginFromSidebar(); return; }
         if (connecting) return;
         if (connected && client != null) {
             connectionMessage = "";
@@ -1238,10 +1246,12 @@ public final class MainActivity extends Activity {
 
     private void adoptConnection(ConnectionRouter.Candidate<Client> candidate, boolean freshSessionCheck) {
         connectionWanted = true;
+        ServerRuntime selectedRuntime = serverRuntimes.get(serverProfiles.selected);
+        boolean trustedSigningIn = selectedRuntime != null && selectedRuntime.federationSignIn != null;
         if (client == candidate.client) {
             if (freshSessionCheck) {
                 if (candidate.session == null && (user != null || hasWorkspaceCache())
-                        && federationEnrollment == null) {
+                        && federationEnrollment == null && !trustedSigningIn) {
                     forgetAccount(); stopStreams(); clearWorkspace(); render();
                 } else if (candidate.session != null && user != null && !routeLoginRequired && !restoringSession
                         && user.optString("id").equals(candidate.session.userID)) {
@@ -1267,7 +1277,10 @@ public final class MainActivity extends Activity {
         busy = false;
         routeLoginRequired = false;
         federationTargets = null;
-        if (candidate.sessionChecked && candidate.session == null) { forgetAccount(); clearWorkspaceData(true); }
+        if (candidate.sessionChecked && candidate.session == null) {
+            if (!trustedSigningIn) forgetAccount();
+            clearWorkspaceData(true);
+        }
         if (retained && candidate.session != null && user.optString("id").equals(candidate.session.userID)) {
             try {
                 JSONObject value = new JSONObject(candidate.session.json);
@@ -1390,6 +1403,8 @@ public final class MainActivity extends Activity {
             if (definitiveConnectionFailure(value)) clearWorkspaceNavigation();
             return;
         }
+        if (runtime != null && runtime.candidate != null && runtime.candidate.sessionChecked && runtime.candidate.session == null
+                && !sessionCheckBusy && startTrustedSignIn(serverProfiles.active(), false)) return;
         if (restoringSession) restoreSession(captured, token);
         else if (routeLoginRequired) return;
         else if (recovered && user != null) {
@@ -1483,61 +1498,82 @@ public final class MainActivity extends Activity {
     }
 
     private boolean startAutomaticFederation(Client destination, int token) {
-        if (federationEnrollment == null || !foreground || destroyed || user != null) return false;
-        final FederationEnrollment enrollment = federationEnrollment;
-        federationEnrollment = null;
-        ServerProfiles.Server server = serverProfiles.active();
-        if (server == null || !server.enabled) return false;
+        if (token != generation || client != destination) return false;
+        return startTrustedSignIn(serverProfiles.active(), federationEnrollment != null);
+    }
+
+    /** A confirmed 401 on an existing trusted profile can recover without selecting its tab. */
+    private boolean startTrustedSignIn(ServerProfiles.Server server, boolean explicit) {
+        if (!foreground || destroyed || server == null || !server.enabled || !server.trusted() || !trustedProfileCurrent(server)) return false;
+        ServerRuntime runtime = serverRuntimes.get(server.id);
+        ConnectionRouter.Candidate<Client> candidate = runtime == null ? null : runtime.candidate;
+        if (candidate == null || !candidate.health.healthy() || !candidate.sessionChecked || candidate.session != null) return false;
+        if (runtime.federationSignIn != null) return true;
+        long now = android.os.SystemClock.elapsedRealtime();
+        if (!explicit && runtime.lastFederationAttempt != 0 && now - runtime.lastFederationAttempt < 30000) return false;
+        ServerProfiles.Server sourceServer = serverProfiles.entries.stream().filter(source -> source.id.equals(server.federationSource)).findFirst().orElse(null);
+        AutomaticFederationSource owner = federationSource(sourceServer);
+        if (owner == null) return false;
+        final FederationEnrollment enrollment = server == serverProfiles.active() && federationEnrollment != null ? federationEnrollment
+                : new FederationEnrollment(owner, server.federationTarget, candidate.endpoint, false);
+        if (!enrollment.target.equals(server.federationTarget) || !enrollment.source.accountKey().equals(server.federationAccount)
+                || !enrollment.endpoint.equals(candidate.endpoint) || !server.plan.origin(candidate.endpoint.mode).equals(candidate.endpoint.origin)) return false;
         final ConnectionPlan plan = server.plan;
-        final ConnectionMode mode = connectionMode;
-        final String address = origin, language = locale();
-        final ServerRuntime targetRuntime = serverRuntimes.get(server.id);
-        final int targetSession = targetRuntime == null ? 0 : targetRuntime.sessionEpoch;
-        if (!server.trusted() || !enrollment.endpoint.equals(new ConnectionPlan.Endpoint(mode, address))
-                || !federationOwnerCurrent(enrollment.source, enrollment.target)) return false;
-        final int session = authEpoch;
-        sessionCheckBusy = true;
-        sessionCheckGeneration = token; sessionCheckAuth = session;
+        final int epoch = runtime.sessionEpoch;
+        final Object attempt = new Object();
+        final String language = locale();
+        runtime.federationSignIn = attempt;
+        runtime.lastFederationAttempt = Math.max(1, now);
+        if (server == serverProfiles.active() && client == candidate.client) {
+            federationEnrollment = null;
+            sessionCheckBusy = true; restoringSession = true;
+            sessionCheckGeneration = generation; sessionCheckAuth = authEpoch;
+        }
         updateConnectingPage();
         io.execute(() -> {
-            if (token != generation || session != authEpoch || destroyed) return;
-            AutomaticFederationSource chosen = null;
             spoolnet.FederationSession result = null;
             try {
-                // An explicit enrollment retry keeps the target identity selected before switching tabs.
-                String target = enrollment.target;
-                if (NativeFederation.validID(target)) {
-                    if (federationAuthorized(enrollment.source, target, mode, address, language, enrollment.requirePublishedMode))
-                        chosen = enrollment.source;
-                    if (chosen != null && token == generation && session == authEpoch && !destroyed)
-                        result = chosen.client.prepareFederatedSession(destination, target, chosen.account, language);
-                }
-            } catch (Exception ignored) { /* 回到普通登录，不自动重试。 */ }
-            AutomaticFederationSource source = chosen;
+                if (federationAuthorized(enrollment.source, enrollment.target, candidate.endpoint.mode, candidate.endpoint.origin, language, enrollment.requirePublishedMode))
+                    result = enrollment.source.client.prepareFederatedSession(candidate.client, enrollment.target, enrollment.source.account, language);
+            } catch (Exception ignored) { /* Leave the trusted retry action available. */ }
             spoolnet.FederationSession exchange = result;
-            post(token, () -> {
-                if (session != authEpoch || client != destination || user != null) return;
-                if (!foreground || !server.enabled || server.plan != plan || serverProfiles.active() != server
-                        || serverRuntimes.get(server.id) != targetRuntime || targetRuntime != null && targetRuntime.sessionEpoch != targetSession) {
-                    // 配置或目标会话已经变更，交给普通恢复流程重新核对。
-                    sessionCheckBusy = false;
-                    if (foreground && connected) restoreSession(destination, token);
-                    return;
-                }
-                if (exchange != null && source != null && federationOwnerCurrent(source, enrollment.target)) {
+            main.post(() -> {
+                if (runtime.federationSignIn != attempt) return;
+                runtime.federationSignIn = null;
+                boolean selected = server == serverProfiles.active() && client == candidate.client;
+                boolean current = !destroyed && foreground && server.enabled && server.plan == plan && serverProfiles.entries.contains(server)
+                        && serverRuntimes.get(server.id) == runtime && runtime.sessionEpoch == epoch && runtime.candidate != null
+                        && runtime.candidate.client == candidate.client && runtime.candidate.endpoint.equals(candidate.endpoint) && runtime.candidate.session == null
+                        && federationOwnerCurrent(enrollment.source, enrollment.target) && trustedProfileCurrent(server);
+                if (selected) { sessionCheckBusy = false; restoringSession = false; }
+                if (current && exchange != null) {
                     try {
                         JSONObject profile = new JSONObject(exchange.activate());
-                        adoptRestoredSession(destination, profile, profile.getJSONObject("user"));
+                        JSONObject account = profile.getJSONObject("user");
+                        ++runtime.sessionEpoch;
+                        runtime.candidate = new ConnectionRouter.Candidate<>(candidate.endpoint, candidate.client, runtime.candidate.health,
+                                new ConnectionRouter.Session(account.getString("id"), profile.toString()));
+                        rememberAccount(server, account);
+                        rememberServerName(server, profile);
+                        if (selected) adoptRestoredSession(candidate.client, profile, account);
+                        else { syncServerFeed(server); renderNavigation(); }
                         return;
-                    } catch (Exception ignored) { /* 目标会话可能已被替换。 */ }
+                    } catch (Exception ignored) { /* A changed session cannot be activated. */ }
                 }
-                forgetAccount(); stopStreams(); clearWorkspace(); render();
+                if (destroyed) return;
+                if (selected) { connectionMessage = ui.t("Could not sign in. Try again."); render(); }
+                else renderNavigation();
             });
         });
         return true;
     }
 
     private void restoreSession(Client captured, int token) {
+        ServerRuntime runtime = serverRuntimes.get(serverProfiles.selected);
+        if (runtime != null && runtime.federationSignIn != null && runtime.candidate != null && runtime.candidate.client == captured) {
+            sessionCheckBusy = true; restoringSession = true;
+            updateConnectingPage(); return;
+        }
         final int session = authEpoch;
         if (sessionCheckBusy && sessionCheckGeneration == token && sessionCheckAuth == session) return;
         sessionCheckBusy = true;
@@ -1568,11 +1604,11 @@ public final class MainActivity extends Activity {
                                         // Invalidate the rejected session before any asynchronous federation work.
                                         forgetAccount();
                                         stopStreams();
-                                        if (user == null && federationEnrollment != null) {
-                                            clearWorkspaceData(true);
-                                            if (startAutomaticFederation(captured, token)) return;
-                                        }
-                                        clearWorkspace(); render();
+                                        FederationEnrollment enrollment = federationEnrollment;
+                                        clearWorkspace();
+                                        federationEnrollment = enrollment;
+                                        if (startAutomaticFederation(captured, token)) { render(); return; }
+                                        render();
                                     } else {
                                         connectionMessage = e.getMessage();
                                         updateConnectingPage();
@@ -2135,8 +2171,12 @@ public final class MainActivity extends Activity {
     }
 
     private void chooseServer(String key) {
+        if (key.equals(federationPendingTab)) return;
         NativeFederation.Tab tab = NativeFederation.find(federationTabs(), key);
         if (tab == null) { if (!key.startsWith(NativeFederation.PREFIX)) selectServer(key); return; }
+        ServerRuntime savedRuntime = tab.server == null ? null : serverRuntimes.get(tab.server.id);
+        if (savedRuntime != null && savedRuntime.federationSignIn != null
+                || tab.server == serverProfiles.active() && sessionCheckBusy) return;
         AutomaticFederationSource owner = federationSource(tab.source);
         if (owner == null || !owner.offers(tab.target.id)) return;
         if (tab.target.clientMode == ConnectionMode.RELAY && (tab.route == null || tab.route.federationRelay)) {
@@ -2172,6 +2212,8 @@ public final class MainActivity extends Activity {
     private void openFederationRelay(AutomaticFederationSource owner, NativeFederation.Target target, String key) {
         if (federationRelayLoading || federationRuntime != null) return;
         federationRelayLoading = true;
+        federationPendingTab = key;
+        renderNavigation();
         final int auth = authEpoch, view = generation;
         final String language = locale();
         io.execute(() -> {
@@ -2179,8 +2221,11 @@ public final class MainActivity extends Activity {
                 String code = owner.client.federationRelayRoute(target.id, owner.account, language);
                 main.post(() -> {
                     federationRelayLoading = false;
+                    federationPendingTab = "";
+                    if (destroyed) return;
+                    renderNavigation();
                     NativeFederation.Tab latest = NativeFederation.find(federationTabs(), key);
-                    if (destroyed || !foreground || auth != authEpoch || view != generation || !federationOwnerCurrent(owner, target.id)
+                    if (!foreground || auth != authEpoch || view != generation || !federationOwnerCurrent(owner, target.id)
                             || latest == null || latest.target.clientMode != ConnectionMode.RELAY) return;
                     ServerProfiles.Server route = new ServerProfiles.Server(UUID.randomUUID().toString(), "",
                             new ConnectionPlan("", "", code, ConnectionMode.RELAY, false));
@@ -2191,7 +2236,10 @@ public final class MainActivity extends Activity {
             } catch (Exception error) {
                 main.post(() -> {
                     federationRelayLoading = false;
-                    if (!destroyed && foreground && auth == authEpoch && view == generation)
+                    federationPendingTab = "";
+                    if (destroyed) return;
+                    renderNavigation();
+                    if (foreground && auth == authEpoch && view == generation)
                         Toast.makeText(this, ui.t("Could not sign in. Try again."), Toast.LENGTH_LONG).show();
                 });
             }
@@ -2211,6 +2259,7 @@ public final class MainActivity extends Activity {
         saveServers();
         final ConnectionPlan plan = server.plan;
         ServerRuntime runtime = serverRuntimes.computeIfAbsent(server.id, key -> new ServerRuntime());
+        if (runtime.federationSignIn != null || runtime.selecting) return;
         ConnectionRouter.Candidate<Client> current = runtime.candidate;
         ConnectionMode mode = NativeFederation.route(server, target, current == null ? plan.selected : current.endpoint.mode);
         if (mode == null) return;
@@ -2235,10 +2284,12 @@ public final class MainActivity extends Activity {
         final int auth = authEpoch, view = generation, targetSession = runtime.sessionEpoch;
         final String language = locale();
         federationRuntime = runtime;
+        federationPendingTab = tab;
         final int attempt = ++federationAttempt;
         runtime.selecting = true;
         if (!server.enabled) { server.enabled = true; saveServers(); }
         Toast.makeText(this, ui.t("Signing in…"), Toast.LENGTH_SHORT).show();
+        renderNavigation();
         // 先复核目标现有线路上的会话，即使该线路不允许收取互信票据。
         List<ConnectionPlan.Endpoint> endpoints = current != null && current.session != null && !endpoint.equals(current.endpoint)
                 && plan.origin(current.endpoint.mode).equals(current.endpoint.origin) ? List.of(current.endpoint, endpoint) : List.of(endpoint);
@@ -2347,6 +2398,7 @@ public final class MainActivity extends Activity {
         federationRuntime.router.cancel();
         federationRuntime.selecting = false;
         federationRuntime = null;
+        federationPendingTab = "";
         ++federationAttempt;
     }
 
@@ -2612,8 +2664,9 @@ public final class MainActivity extends Activity {
         if (destroyed || (!foreground && !sharingAdb(server.id)) || !server.enabled || server.plan.ordered(null).isEmpty()) return;
         if (server.trusted() && !trustedProfileCurrent(server)) return;
         ServerRuntime runtime = serverRuntimes.computeIfAbsent(server.id, key -> new ServerRuntime());
-        if (runtime.selecting) return;
+        if (runtime.selecting || runtime.federationSignIn != null) return;
         ConnectionRouter.Candidate<Client> current = runtime.candidate;
+        if (startTrustedSignIn(server, false)) return;
         if (!force && current != null && current.health.healthy() && current.sessionChecked) {
             long age = current.client.responseAgeMillis();
             if (age >= 0 && age < ConnectionRecovery.QUIET_CHECK_MILLIS) return;
@@ -2648,6 +2701,7 @@ public final class MainActivity extends Activity {
                     if (!selected) rememberAccount(server, value.optJSONObject("user"));
                 } catch (Exception ignored) {}
                 else if (freshSessionCheck && !selected) forgetAccount(server);
+                if (freshSessionCheck && !selected && candidate.session == null && startTrustedSignIn(server, false)) return;
                 if (selected) { routeStates.putAll(runtime.states); adoptConnection(candidate, freshSessionCheck); }
                 else syncServerFeed(server);
                 renderNavigation();
@@ -3130,13 +3184,20 @@ public final class MainActivity extends Activity {
 
     private Map<String, String> serverConnectionStates() {
         Map<String, String> states = new HashMap<>();
-        for (ServerProfiles.Server server : serverProfiles.entries) states.put(server.id, serverConnectionState(server));
+        for (ServerProfiles.Server server : serverProfiles.entries) {
+            states.put(server.id, serverConnectionState(server));
+            ServerRuntime runtime = serverRuntimes.get(server.id);
+            if (server.trusted() && (runtime != null && runtime.federationSignIn != null || server == serverProfiles.active() && sessionCheckBusy))
+                states.put(NativeFederation.tabKey(server.federationSource, server.federationTarget), "signing-in");
+        }
+        if (!federationPendingTab.isEmpty()) states.put(federationPendingTab, "signing-in");
         return states;
     }
 
     private String serverConnectionState(ServerProfiles.Server server) {
         if (!server.enabled || server.plan.ordered(null).isEmpty()) return "disconnected";
         ServerRuntime runtime = serverRuntimes.get(server.id);
+        if (runtime != null && runtime.federationSignIn != null) return "connecting";
         ConnectionRouter.Candidate<Client> candidate = runtime == null ? null : runtime.candidate;
         boolean selected = server.id.equals(serverProfiles.selected);
         ConnectionPlan.Endpoint endpoint = selected && client != null ? new ConnectionPlan.Endpoint(connectionMode, origin)
@@ -3185,8 +3246,13 @@ public final class MainActivity extends Activity {
         boolean signedIn = user != null && !routeLoginRequired;
         boolean showWorkspace = signedIn || hasWorkspaceCache();
         boolean networkPending = routeSelecting || connecting && !httpsState.equals("Failed");
-        boolean pending = networkPending || sessionCheckBusy;
-        String action = networkPending ? "Connecting…" : sessionCheckBusy ? "Restoring sign-in…" : !connected || client == null || restoringSession
+        ServerProfiles.Server selectedServer = serverProfiles.active();
+        ServerRuntime selectedRuntime = selectedServer == null ? null : serverRuntimes.get(selectedServer.id);
+        boolean trustedPending = selectedServer != null && selectedServer.trusted() &&
+                (sessionCheckBusy || selectedRuntime != null && selectedRuntime.federationSignIn != null
+                        || federationPendingTab.equals(NativeFederation.tabKey(selectedServer.federationSource, selectedServer.federationTarget)));
+        boolean pending = networkPending || sessionCheckBusy || trustedPending;
+        String action = trustedPending ? "Signing in…" : networkPending ? "Connecting…" : sessionCheckBusy ? "Restoring sign-in…" : !connected || client == null || restoringSession
                 ? connectionWanted && serverProfiles.active() != null && serverProfiles.active().enabled ? "Retry" : "Connect"
                 : signedIn ? "" : "Sign in";
         JSONObject account = signedIn ? ServerProfiles.displayAccount(person(user.optString("id")))
@@ -3203,10 +3269,16 @@ public final class MainActivity extends Activity {
 
     private void loginFromSidebar() {
         if (serverProfiles.active() == null) { addServer(); return; }
+        ServerProfiles.Server server = serverProfiles.active();
+        ServerRuntime runtime = serverRuntimes.get(server.id);
+        if (runtime != null && runtime.federationSignIn != null) return;
         if (routeSelecting || sessionCheckBusy) return;
         if (connectionPlan.ordered(null).isEmpty()) { openSettings(); return; }
         if (!serverProfiles.active().enabled) enableServer(serverProfiles.selected, true);
         else if (!connected || client == null) selectConnections(null, true);
+        else if (server.trusted()) {
+            if (!startTrustedSignIn(server, true)) restoreSession(client, generation);
+        }
         else if (restoringSession) restoreSession(client, generation);
         else { closeDrawer(); render(); if (username != null) username.requestFocus(); }
     }
@@ -5926,6 +5998,10 @@ public final class MainActivity extends Activity {
         }
         for (Map.Entry<String, ServerRuntime> entry : serverRuntimes.entrySet()) {
             ServerRuntime runtime = entry.getValue();
+            if (runtime.federationSignIn != null) {
+                runtime.federationSignIn = null;
+                if (entry.getKey().equals(serverProfiles.selected)) sessionCheckBusy = false;
+            }
             stopServerFeed(runtime);
             if (sharingAdb(entry.getKey())) continue;
             if (runtime.selecting) runtime.candidate = null;
