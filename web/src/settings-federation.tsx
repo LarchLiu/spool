@@ -34,6 +34,7 @@ type TrustPeer = {
   sync_pending?: boolean;
   users?: string[];
   all_users?: boolean;
+  projects?: DefaultProject[];
   revocations?: {
     outgoing: boolean;
     initiator: string;
@@ -175,7 +176,19 @@ export function ServerTrustPage({
       peer={peer}
       localServerID={data?.server_id ?? ""}
       users={local?.users ?? []}
+      projects={local?.projects ?? []}
       revoke={(outgoing) => act(outgoing ? "withdraw" : "revoke", peer.id)}
+      saveProjects={(projects) =>
+        run(async () => {
+          setData(
+            await settingsCall<TrustSnapshot>(
+              "SetFederationTrustProjects",
+              peer.id,
+              projects,
+            ),
+          );
+        })
+      }
       saveReturnRoute={(route) =>
         run(async () => {
           setData(
@@ -407,6 +420,10 @@ export function ServerTrustPage({
                   key={r.id}
                   request={r}
                   projects={local?.projects ?? []}
+                  defaults={
+                    data.peers.find((peer) => peer.id === r.peer_id)
+                      ?.projects ?? []
+                  }
                   t={t}
                   reject={() => void act("reject", r.id)}
                   approve={(defaults, reverse) =>
@@ -595,6 +612,8 @@ function TrustedServer({
   peer,
   localServerID,
   users,
+  projects,
+  saveProjects,
   saveReturnRoute,
   saveUsers,
   revoke,
@@ -603,11 +622,14 @@ function TrustedServer({
   peer: TrustPeer;
   localServerID: string;
   users: Person[];
+  projects: ManagedProject[];
+  saveProjects: (projects: DefaultProject[]) => Promise<boolean>;
   saveReturnRoute: (route: Route) => Promise<boolean>;
   saveUsers: (all: boolean, users: string[]) => Promise<boolean>;
   revoke: (outgoing: boolean) => Promise<boolean>;
 }) {
   const [returnRoute, setReturnRoute] = useState<Route>();
+  const [projectDraft, setProjectDraft] = useState<DefaultProject[]>();
   const [draft, setDraft] = useState<{ all: boolean; selected: string[] }>();
   const [confirmRevocation, setConfirmRevocation] = useState(false);
   const [revokeOutgoing, setRevokeOutgoing] = useState(!peer.incoming);
@@ -623,6 +645,9 @@ function TrustedServer({
   useEffect(() => {
     if (!peer.incoming && !pendingReturnRoute) setReturnRoute(undefined);
   }, [peer.incoming, pendingReturnRoute]);
+  useEffect(() => {
+    if (!peer.incoming) setProjectDraft(undefined);
+  }, [peer.incoming]);
   useEffect(() => {
     if (confirmRevocation && !(outgoing ? peer.outgoing : peer.incoming))
       setConfirmRevocation(false);
@@ -649,21 +674,35 @@ function TrustedServer({
               >
                 <span className="settings-trust-direction">{direction}</span>
                 <div className="settings-trust-details">
-                  {isOutgoing
-                    ? !draft && (
+                  {isOutgoing ? (
+                    !draft && (
+                      <button
+                        type="button"
+                        onClick={() =>
+                          setDraft({
+                            all: !!peer.all_users,
+                            selected: peer.users ?? [],
+                          })
+                        }
+                      >
+                        {t("Manage allowed users")}
+                      </button>
+                    )
+                  ) : (
+                    <>
+                      {!projectDraft && (
                         <button
                           type="button"
                           onClick={() =>
-                            setDraft({
-                              all: !!peer.all_users,
-                              selected: peer.users ?? [],
-                            })
+                            setProjectDraft(
+                              activeDefaults(projects, peer.projects ?? []),
+                            )
                           }
                         >
-                          {t("Manage allowed users")}
+                          {t("Manage default projects")}
                         </button>
-                      )
-                    : !returnRoute && (
+                      )}
+                      {!returnRoute && (
                         <button
                           type="button"
                           onClick={() =>
@@ -677,6 +716,8 @@ function TrustedServer({
                           )}
                         </button>
                       )}
+                    </>
+                  )}
                   <span className="settings-trust-status">
                     {isOutgoing
                       ? peer.all_users
@@ -760,6 +801,30 @@ function TrustedServer({
             ))}
         </div>
       </Row>
+      {peer.incoming && projectDraft && (
+        <form
+          onSubmit={async (event) => {
+            event.preventDefault();
+            if (await saveProjects(activeDefaults(projects, projectDraft)))
+              setProjectDraft(undefined);
+          }}
+        >
+          <DefaultProjects
+            t={t}
+            projects={projects}
+            value={projectDraft}
+            onChange={setProjectDraft}
+          />
+          <div className="settings-card-actions">
+            <button className="settings-primary" type="submit">
+              {t("Save default projects")}
+            </button>
+            <button type="button" onClick={() => setProjectDraft(undefined)}>
+              {t("Cancel")}
+            </button>
+          </div>
+        </form>
+      )}
       {confirming && !peer.revoked && (
         <Row
           title={t("Revoke trust with {name}?", {
@@ -941,27 +1006,33 @@ function IncomingRequest({
   t,
   request,
   projects,
+  defaults,
   approve,
   reject,
 }: {
   t: Translator;
   request: TrustRequest;
   projects: ManagedProject[];
+  defaults: DefaultProject[];
   approve: (p: DefaultProject[], route: Route) => void;
   reject: () => void;
 }) {
   const [review, setReview] = useState(false);
-  const [selected, setSelected] = useState<Record<string, DefaultProject>>({});
+  const [selected, setSelected] = useState<DefaultProject[]>([]);
   const [route, setRoute] = useState<Route>({ transport: "", address: "" });
-  const active = projects.filter((p) => !p.archived);
-  const update = (p: DefaultProject) => setSelected({ ...selected, [p.id]: p });
   return (
     <>
       <TrustRequestRow t={t} request={request}>
         {request.status === "pending" && (
           <>
             {!review && (
-              <button type="button" onClick={() => setReview(true)}>
+              <button
+                type="button"
+                onClick={() => {
+                  setSelected(activeDefaults(projects, defaults));
+                  setReview(true);
+                }}
+              >
                 {t("Review trust request")}
               </button>
             )}
@@ -975,95 +1046,15 @@ function IncomingRequest({
         <form
           onSubmit={(e) => {
             e.preventDefault();
-            approve(
-              active.flatMap((p) => (selected[p.id] ? [selected[p.id]] : [])),
-              route,
-            );
+            approve(activeDefaults(projects, selected), route);
           }}
         >
-          <Row
-            title={t("Default projects for new users")}
-            help={t(
-              "These permissions apply the first time an approved person signs in.",
-            )}
-            wide
+          <DefaultProjects
+            t={t}
+            projects={projects}
+            value={selected}
+            onChange={setSelected}
           />
-          {active.map((p) => {
-            const rule = selected[p.id];
-            return (
-              <Row key={p.id} title={p.name}>
-                {rule && (
-                  <div className="settings-member-permissions">
-                    <div className="settings-member-permission">
-                      <span>{t("In-app permissions")}</span>
-                      <div
-                        className="settings-member-access"
-                        role="group"
-                        aria-label={`${p.name} · ${t("In-app permissions")}`}
-                      >
-                        {(["read-only", "create"] as const).map((access) => (
-                          <button
-                            key={access}
-                            type="button"
-                            aria-pressed={rule.own_access === access}
-                            onClick={() =>
-                              update({ ...rule, own_access: access })
-                            }
-                          >
-                            {t(
-                              access === "read-only"
-                                ? "Read-only"
-                                : "Can create",
-                            )}
-                          </button>
-                        ))}
-                      </div>
-                    </div>
-                    <div className="settings-member-permission">
-                      <span>{t("Shared session permissions")}</span>
-                      <div
-                        className="settings-member-access"
-                        role="group"
-                        aria-label={`${p.name} · ${t("Shared session permissions")}`}
-                      >
-                        {(["read-only", "control"] as const).map((access) => (
-                          <button
-                            key={access}
-                            type="button"
-                            aria-pressed={rule.access === access}
-                            onClick={() => update({ ...rule, access })}
-                          >
-                            {t(
-                              access === "read-only"
-                                ? "Read-only"
-                                : "Can control sessions",
-                            )}
-                          </button>
-                        ))}
-                      </div>
-                    </div>
-                  </div>
-                )}
-                <Toggle
-                  label={p.name}
-                  value={!!rule}
-                  onChange={(enabled) => {
-                    if (enabled)
-                      update({
-                        id: p.id,
-                        access: "read-only",
-                        own_access: "read-only",
-                      });
-                    else {
-                      const next = { ...selected };
-                      delete next[p.id];
-                      setSelected(next);
-                    }
-                  }}
-                />
-              </Row>
-            );
-          })}
           <Hint>
             {t(
               request.return_transport
@@ -1088,6 +1079,114 @@ function IncomingRequest({
           </div>
         </form>
       )}
+    </>
+  );
+}
+
+function activeDefaults(
+  projects: ManagedProject[],
+  defaults: DefaultProject[],
+) {
+  return projects.flatMap((project) => {
+    const rule = defaults.find((item) => item.id === project.id);
+    return !project.archived && rule ? [rule] : [];
+  });
+}
+
+function DefaultProjects({
+  t,
+  projects,
+  value,
+  onChange,
+}: {
+  t: Translator;
+  projects: ManagedProject[];
+  value: DefaultProject[];
+  onChange: (value: DefaultProject[]) => void;
+}) {
+  const update = (rule: DefaultProject) =>
+    onChange([...value.filter((item) => item.id !== rule.id), rule]);
+  return (
+    <>
+      <Row
+        title={t("Default projects for new users")}
+        help={t(
+          "Defaults apply only on a new user's first sign-in. Changes do not affect existing users' projects or permissions.",
+        )}
+        wide
+      />
+      {projects
+        .filter((project) => !project.archived)
+        .map((project) => {
+          const rule = value.find((item) => item.id === project.id);
+          return (
+            <Row key={project.id} title={project.name}>
+              {rule && (
+                <div className="settings-member-permissions">
+                  <div className="settings-member-permission">
+                    <span>{t("In-app permissions")}</span>
+                    <div
+                      className="settings-member-access"
+                      role="group"
+                      aria-label={`${project.name} · ${t("In-app permissions")}`}
+                    >
+                      {(["read-only", "create"] as const).map((access) => (
+                        <button
+                          key={access}
+                          type="button"
+                          aria-pressed={rule.own_access === access}
+                          onClick={() =>
+                            update({ ...rule, own_access: access })
+                          }
+                        >
+                          {t(
+                            access === "read-only" ? "Read-only" : "Can create",
+                          )}
+                        </button>
+                      ))}
+                    </div>
+                  </div>
+                  <div className="settings-member-permission">
+                    <span>{t("Shared session permissions")}</span>
+                    <div
+                      className="settings-member-access"
+                      role="group"
+                      aria-label={`${project.name} · ${t("Shared session permissions")}`}
+                    >
+                      {(["read-only", "control"] as const).map((access) => (
+                        <button
+                          key={access}
+                          type="button"
+                          aria-pressed={rule.access === access}
+                          onClick={() => update({ ...rule, access })}
+                        >
+                          {t(
+                            access === "read-only"
+                              ? "Read-only"
+                              : "Can control sessions",
+                          )}
+                        </button>
+                      ))}
+                    </div>
+                  </div>
+                </div>
+              )}
+              <Toggle
+                label={project.name}
+                value={!!rule}
+                onChange={(enabled) => {
+                  if (enabled)
+                    update({
+                      id: project.id,
+                      access: "read-only",
+                      own_access: "read-only",
+                    });
+                  else onChange(value.filter((item) => item.id !== project.id));
+                }}
+              />
+            </Row>
+          );
+        })}
     </>
   );
 }

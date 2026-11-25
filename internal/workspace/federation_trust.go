@@ -130,6 +130,7 @@ type FederationTrustPeer struct {
 	SyncPending bool                              `json:"sync_pending,omitempty"`
 	AllUsers    bool                              `json:"all_users,omitempty"`
 	Users       []string                          `json:"users,omitempty"`
+	Projects    []FederationProject               `json:"projects,omitempty"`
 	Revocations []FederationTrustRevocationRecord `json:"revocations,omitempty"`
 }
 
@@ -185,6 +186,35 @@ func (s *Store) SetFederationTrustUsers(target string, allUsers bool, users []st
 		return err
 	}
 	return s.commitFederationUsers(tx, p, previous)
+}
+
+// SetFederationTrustProjects updates first-login defaults without changing existing users.
+func (s *Store) SetFederationTrustProjects(target string, projects []FederationProject) error {
+	tx, err := s.db.Begin()
+	if err != nil {
+		return err
+	}
+	defer tx.Rollback()
+	var approved bool
+	if err := tx.QueryRow(`SELECT EXISTS(SELECT 1 FROM federation_trust_grants WHERE peer_id=? AND incoming=1)`, target).Scan(&approved); err != nil {
+		return err
+	}
+	if !approved {
+		return errors.New("Approve an incoming server trust request before configuring default projects")
+	}
+	if err := validateFederationProjects(tx, projects); err != nil {
+		return err
+	}
+	data, err := json.Marshal(projects)
+	if err != nil {
+		return err
+	}
+	// Logins read current defaults in their own transaction. Keep the generation
+	// and other policy fields intact so existing sessions are unaffected.
+	if _, err := tx.Exec(`UPDATE federation_peers SET config=json_set(config,'$.projects',json(?)) WHERE id=?`, string(data), target); err != nil {
+		return err
+	}
+	return tx.Commit()
 }
 
 // UpdateFederationTrustReturnRoute 配置已批准来源的回连线路，不修改其他登录策略。
@@ -324,6 +354,7 @@ func (s *Store) FederationTrustSnapshot() (FederationTrustSnapshot, error) {
 		g.incoming,g.outgoing,
 		g.incoming AND coalesce(json_extract(p.config,'$.accept'),0),g.incoming=0 AND g.outgoing=0,
 		coalesce(json_extract(p.config,'$.all_users'),0),coalesce(json_extract(p.config,'$.users'),'[]'),
+		coalesce(json_extract(p.config,'$.projects'),'[]'),
 		EXISTS(SELECT 1 FROM federation_trust_notifications n WHERE n.peer_id=p.id)
 		FROM federation_peers p JOIN federation_trust_grants g ON g.peer_id=p.id ORDER BY 2,p.id`)
 	if err != nil {
@@ -333,9 +364,14 @@ func (s *Store) FederationTrustSnapshot() (FederationTrustSnapshot, error) {
 	peerIndexes := make(map[string]int)
 	for rows.Next() {
 		var p FederationTrustPeer
-		var users string
-		if err := rows.Scan(&p.ID, &p.Name, &p.Incoming, &p.Outgoing, &p.Accept, &p.Revoked, &p.AllUsers, &users, &p.SyncPending); err != nil {
+		var users, projects string
+		if err := rows.Scan(&p.ID, &p.Name, &p.Incoming, &p.Outgoing, &p.Accept, &p.Revoked, &p.AllUsers, &users, &projects, &p.SyncPending); err != nil {
 			return v, err
+		}
+		if p.Incoming {
+			if err := json.Unmarshal([]byte(projects), &p.Projects); err != nil {
+				return v, err
+			}
 		}
 		if p.Outgoing {
 			if err := json.Unmarshal([]byte(users), &p.Users); err != nil {

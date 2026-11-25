@@ -307,6 +307,17 @@ func (s *desktopSettings) UpdateFederationTrustReturnRoute(ctx context.Context, 
 	return service.Store.FederationTrustSnapshot()
 }
 
+func (s *desktopSettings) SetFederationTrustProjects(ctx context.Context, target string, projects []workspace.FederationProject) (workspace.FederationTrustSnapshot, error) {
+	if _, err := settingsUI(ctx, s.panel, func() (bool, error) { return true, nil }); err != nil {
+		return workspace.FederationTrustSnapshot{}, err
+	}
+	store := s.panel.service.Store
+	if err := store.SetFederationTrustProjects(target, projects); err != nil {
+		return workspace.FederationTrustSnapshot{}, err
+	}
+	return store.FederationTrustSnapshot()
+}
+
 func (s *desktopSettings) SetFederationTrustUsers(ctx context.Context, target string, allUsers bool, users []string) (workspace.FederationTrustSnapshot, error) {
 	if _, err := settingsUI(ctx, s.panel, func() (bool, error) { return true, nil }); err != nil {
 		return workspace.FederationTrustSnapshot{}, err

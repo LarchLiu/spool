@@ -309,6 +309,7 @@ export function settingsCall<T>(
     | "SubmitFederationTrust"
     | "ApproveFederationTrust"
     | "UpdateFederationTrustReturnRoute"
+    | "SetFederationTrustProjects"
     | "SetFederationTrustUsers"
     | "RelayDevices"
     | "DecideRelayDevice"

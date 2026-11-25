@@ -541,6 +541,8 @@ func (s *Store) federationLogin(peer FederationPeer, person federationSubject, c
 		if _, err = tx.Exec(`INSERT INTO federation_users VALUES(?,?,?)`, peer.ID, person.ID, user); err != nil {
 			return "", time.Time{}, err
 		}
+		// Defaults belong only to account creation. Later logins must preserve
+		// membership and permissions managed by the destination administrator.
 		for _, project := range current.Projects {
 			result, err := tx.Exec(`INSERT INTO project_members SELECT id,? FROM projects WHERE id=? AND archived=0`, user, project.ID)
 			if err != nil {

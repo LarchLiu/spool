@@ -77,6 +77,9 @@ func TestSettingsBridgeRejectsCallsWithoutDesktopPage(t *testing.T) {
 		if _, err := bridge.SetFederationTrustUsers(context.Background(), "target", true, nil); err == nil {
 			t.Fatal("federation allowlist changed without the private settings page")
 		}
+		if _, err := bridge.SetFederationTrustProjects(context.Background(), "target", nil); err == nil {
+			t.Fatal("federation default projects changed without the private settings page")
+		}
 		if _, err := bridge.UpdateFederationTrustReturnRoute(context.Background(), "target", "https", "https://peer.example.test"); err == nil {
 			t.Fatal("federation return route changed without the private settings page")
 		}

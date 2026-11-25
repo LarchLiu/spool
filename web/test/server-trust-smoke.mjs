@@ -151,6 +151,7 @@ try {
     ];
     const peers = [];
     window.trustPeers = peers;
+    window.trustRequests = requests;
     window.calls = [];
     window.mygo = {
       on() {},
@@ -176,6 +177,7 @@ try {
             incoming: true,
             outgoing: false,
             accept: true,
+            projects: structuredClone(args[1].projects),
           });
         }
         if (args[0] === "check") {
@@ -192,6 +194,13 @@ try {
         if (method === "DesktopSettings.UpdateFederationTrustReturnRoute") {
           const peer = peers.find((p) => p.id === args[0]);
           peer.accept = peer.incoming;
+        }
+        if (method === "DesktopSettings.SetFederationTrustProjects") {
+          if (window.defaultProjectsError)
+            throw new Error(window.defaultProjectsError);
+          peers.find((p) => p.id === args[0]).projects = structuredClone(
+            args[1],
+          );
         }
         if (method === "DesktopSettings.SetFederationTrustUsers") {
           const peer = peers.find((p) => p.id === args[0]);
@@ -662,6 +671,183 @@ try {
     .locator(".settings-row")
     .filter({ has: page.locator(".settings-trust-directions") })
     .filter({ has: page.getByText("Source", { exact: true }) });
+  const manageDefaults = sourceRow.getByRole("button", {
+    name: "Manage default projects",
+    exact: true,
+  });
+  assert.equal(await manageDefaults.count(), 1);
+  assert.equal(
+    await page
+      .getByRole("button", { name: "Manage default projects", exact: true })
+      .count(),
+    1,
+    "Only an incoming trust direction can edit local project defaults",
+  );
+  await manageDefaults.click();
+  const saveDefaults = page.getByRole("button", {
+    name: "Save default projects",
+    exact: true,
+  });
+  const defaultsForm = page.locator("form").filter({ has: saveDefaults });
+  await defaultsForm
+    .getByText(
+      "Defaults apply only on a new user's first sign-in. Changes do not affect existing users' projects or permissions.",
+      { exact: true },
+    )
+    .waitFor();
+  const defaultAlpha = defaultsForm.getByRole("switch", {
+    name: "Alpha",
+    exact: true,
+  });
+  const defaultBeta = defaultsForm.getByRole("switch", {
+    name: "Beta",
+    exact: true,
+  });
+  assert.ok(await defaultAlpha.isChecked());
+  assert.ok(await defaultBeta.isChecked());
+  assert.equal(
+    await defaultsForm
+      .getByRole("group", {
+        name: "Alpha · Shared session permissions",
+        exact: true,
+      })
+      .getByRole("button", { name: "Can control sessions", exact: true })
+      .getAttribute("aria-pressed"),
+    "true",
+    "The editor must load the permissions saved during approval",
+  );
+  await defaultAlpha.click();
+  const betaControl = defaultsForm
+    .getByRole("group", {
+      name: "Beta · Shared session permissions",
+      exact: true,
+    })
+    .getByRole("button", { name: "Can control sessions", exact: true });
+  await betaControl.click();
+  // A background refresh must preserve an open draft.
+  await page.waitForFunction(
+    () =>
+      window.calls.filter(
+        ([method, action]) =>
+          method === "DesktopSettings.FederationTrust" && action === "list",
+      ).length > 1,
+  );
+  assert.ok(!(await defaultAlpha.isChecked()));
+  for (const width of [960, 390]) {
+    await page.setViewportSize({ width, height: 850 });
+    assert.ok(
+      await page.evaluate(
+        () => document.documentElement.scrollWidth <= innerWidth,
+      ),
+    );
+    await defaultsForm.screenshot({
+      path: join(output, `edit-default-projects-${width}.png`),
+      animations: "disabled",
+    });
+  }
+  await page.setViewportSize({ width: 960, height: 850 });
+  await page.evaluate(() => {
+    window.defaultProjectsError = "Could not save default projects";
+  });
+  await saveDefaults.click();
+  await page
+    .getByRole("alert")
+    .filter({ hasText: "Could not save default projects" })
+    .waitFor();
+  assert.ok(!(await defaultAlpha.isChecked()));
+  assert.equal(await betaControl.getAttribute("aria-pressed"), "true");
+  await page.getByRole("button", { name: "Dismiss", exact: true }).click();
+  await page.evaluate(() => {
+    window.defaultProjectsError = "";
+  });
+  await saveDefaults.click();
+  await saveDefaults.waitFor({ state: "hidden" });
+  assert.deepEqual(await page.evaluate(() => window.trustPeers[0].projects), [
+    { id: "beta", access: "control", own_access: "create" },
+  ]);
+  await manageDefaults.click();
+  assert.ok(!(await defaultAlpha.isChecked()));
+  assert.ok(await defaultBeta.isChecked());
+  assert.equal(await betaControl.getAttribute("aria-pressed"), "true");
+  await defaultAlpha.click();
+  await defaultsForm
+    .getByRole("button", { name: "Cancel", exact: true })
+    .click();
+  await manageDefaults.click();
+  assert.ok(
+    !(await defaultAlpha.isChecked()),
+    "Cancel must discard project changes",
+  );
+  await defaultsForm
+    .getByRole("button", { name: "Cancel", exact: true })
+    .click();
+  // A renewal starts with the current defaults, including permissions.
+  await page.evaluate(() =>
+    window.trustRequests.push({
+      id: "renewal",
+      peer_id: "a".repeat(52),
+      peer_name: "Source",
+      outgoing: false,
+      status: "pending",
+      expires_at: Date.now() / 1000 + 3600,
+    }),
+  );
+  await page
+    .getByRole("button", { name: "Review trust request", exact: true })
+    .click();
+  const renewalForm = page
+    .locator("form")
+    .filter({
+      has: page.getByRole("button", { name: "Approve trust", exact: true }),
+    });
+  assert.ok(
+    !(await renewalForm
+      .getByRole("switch", { name: "Alpha", exact: true })
+      .isChecked()),
+  );
+  assert.ok(
+    await renewalForm
+      .getByRole("switch", { name: "Beta", exact: true })
+      .isChecked(),
+  );
+  assert.equal(
+    await renewalForm
+      .getByRole("group", {
+        name: "Beta · Shared session permissions",
+        exact: true,
+      })
+      .getByRole("button", { name: "Can control sessions", exact: true })
+      .getAttribute("aria-pressed"),
+    "true",
+  );
+  await renewalForm
+    .getByRole("button", { name: "Cancel", exact: true })
+    .click();
+  await page.evaluate(() =>
+    window.trustRequests.splice(
+      window.trustRequests.findIndex((r) => r.id === "renewal"),
+      1,
+    ),
+  );
+  // Clearing all defaults is supported and persists when reopened.
+  await manageDefaults.click();
+  await defaultBeta.click();
+  await saveDefaults.click();
+  await saveDefaults.waitFor({ state: "hidden" });
+  assert.deepEqual(
+    (await page.evaluate(() => window.calls))
+      .filter(
+        ([method]) => method === "DesktopSettings.SetFederationTrustProjects",
+      )
+      .at(-1),
+    ["DesktopSettings.SetFederationTrustProjects", "a".repeat(52), []],
+  );
+  await manageDefaults.click();
+  assert.ok(!(await defaultAlpha.isChecked()));
+  assert.ok(!(await defaultBeta.isChecked()));
+  await defaultsForm
+    .getByRole("button", { name: "Cancel", exact: true })
+    .click();
   const activeCard = page.locator("section.settings-group").filter({
     has: page.getByRole("heading", { name: "Trusted servers", exact: true }),
   });
