@@ -4825,6 +4825,14 @@ option {
   color: var(--muted);
   overflow-wrap: anywhere;
 }
+.file-panel-empty[role="status"] {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+.file-panel-empty[role="status"] svg {
+  flex-shrink: 0;
+}
 .file-panel-notice {
   background: var(--notice-bg);
   color: var(--notice-text);

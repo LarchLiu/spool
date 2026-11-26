@@ -415,9 +415,12 @@ function ProjectFiles({
               }}>
               {!ready && (
                 <p
-                  className="file-panel-notice"
+                  className={workspaceError || workspace ? "file-panel-notice" : "file-panel-empty"}
                   role={workspaceError ? "alert" : "status"}
                 >
+                  {!workspace && !workspaceError && (
+                    <><LoaderCircle size={14} className="stop-spinner" />{" "}</>
+                  )}
                   {workspaceError ||
                     t(
                       workspace
@@ -427,6 +430,12 @@ function ProjectFiles({
                   {workspaceError && (
                     <button onClick={reload}>{t("Retry")}</button>
                   )}
+                </p>
+              )}
+              {busy > 0 && !count && (
+                <p className="file-panel-empty" role="status">
+                  <LoaderCircle size={14} className="stop-spinner" />{" "}
+                  {t("Loading files…")}
                 </p>
               )}
               <FileTree
@@ -442,7 +451,7 @@ function ProjectFiles({
                   } as CSSProperties
                 }
               />
-              {busy > 0 && (
+              {busy > 0 && count > 0 && (
                 <span
                   className="file-tree-loading"
                   role="status"
