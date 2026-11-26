@@ -196,6 +196,17 @@ try {
           (element, [start, end]) => element.setSelectionRange(start, end),
           [start, end],
         );
+      const expectCaretAtEnd = async () => {
+        const selection = await composer.evaluate((element) => ({
+          start: element.selectionStart,
+          end: element.selectionEnd,
+          length: element.value.length,
+        }));
+        assert.deepEqual(
+          [selection.start, selection.end],
+          [selection.length, selection.length],
+        );
+      };
 
       await expectFocus();
       await page.keyboard.insertText("Ready to type");
@@ -205,15 +216,21 @@ try {
       await composer.fill("Unsent draft");
       await caret(4);
       for (const expected of [...messages].reverse()) {
+        // Multiline inputs keep normal arrow movement until the text boundary.
+        if ((await composer.inputValue()).includes("\n")) await caret(0);
         await composer.press("ArrowUp");
         await expectValue(expected);
+        await expectCaretAtEnd();
       }
+      await caret(3);
       await composer.press("ArrowUp");
       await expectValue(messages[0]);
+      await expectCaretAtEnd();
       for (const expected of [...messages.slice(1), "Unsent draft"]) {
         await caret((await composer.inputValue()).length);
         await composer.press("ArrowDown");
         await expectValue(expected);
+        if (expected !== "Unsent draft") await expectCaretAtEnd();
       }
       assert.deepEqual(
         await composer.evaluate((element) => [
@@ -232,7 +249,7 @@ try {
 
       // Editing a recalled message starts a new draft and preserves the edit.
       await composer.press("ArrowUp");
-      await composer.press("End");
+      await expectCaretAtEnd();
       await composer.press("!");
       await composer.press("ArrowDown");
       await expectValue("Latest input!");
@@ -358,6 +375,7 @@ try {
       console.log({
         shell: desktop ? "desktop" : "web",
         historyRecall: true,
+        historyCaretAtEnd: true,
         draftRestored: true,
         editing: true,
         cursorAndIME: true,

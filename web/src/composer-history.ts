@@ -103,8 +103,8 @@ export function useComposerHistory(
         ? current.draft
         : {
             value: text,
-            start: up ? 0 : text.length,
-            end: up ? 0 : text.length,
+            start: text.length,
+            end: text.length,
           };
     event.preventDefault();
     current.index = index;
