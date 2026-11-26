@@ -12,7 +12,10 @@ import {
 } from "lucide-react";
 import type { Translator } from "./i18n";
 import { ActionMenu } from "./action-menu";
-import { useChatTitleTooltip } from "./chat-title-tooltip";
+import {
+  useChatTitleTooltip,
+  type ChatTitleTooltipSession,
+} from "./chat-title-tooltip";
 
 type ChatActionProps = {
   title: string;
@@ -21,6 +24,7 @@ type ChatActionProps = {
   onTogglePin: () => void;
   canManage?: boolean;
   tooltipSide?: "below" | "right";
+  tooltipSession?: ChatTitleTooltipSession;
   onRename: (title: string) => Promise<void>;
   onArchive: () => Promise<void>;
   onDelete: () => Promise<void>;
@@ -64,6 +68,7 @@ export function ChatActionMenu({
   onTogglePin,
   canManage = true,
   tooltipSide,
+  tooltipSession,
   onRename,
   onArchive,
   onDelete,
@@ -92,6 +97,7 @@ export function ChatActionMenu({
     trigger,
     open || renaming || deleting || archiving,
     tooltipSide,
+    tooltipSession,
   );
   const archivePending = useRef(false);
   const [point, setPoint] = useState<{ left?: number; top?: number }>({});

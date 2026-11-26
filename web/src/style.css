@@ -750,6 +750,16 @@ button:disabled {
 .chat-title-tooltip[data-side="right"] {
   max-width: min(300px, calc(100vw - 16px));
 }
+.chat-title-tooltip-meta {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-bottom: 6px;
+  color: var(--muted);
+}
+.chat-title-tooltip-meta time {
+  white-space: nowrap;
+}
 .chat-menu-backdrop {
   position: fixed;
   inset: 0;

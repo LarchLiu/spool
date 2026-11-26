@@ -34,15 +34,21 @@ const server = await createTestViteServer(
 );
 const longTitle = "完整标题中文 English ".repeat(100) + "末尾✅";
 const titles = [longTitle, "Wide title ".repeat(17) + "end", "Short title"];
+const now = new Date(2026, 10, 26, 12, 34);
+const updatedAt = [
+  now,
+  new Date(2026, 9, 29, 10, 12),
+  new Date(2025, 9, 29, 10, 12),
+];
 const chats = titles.map((title, index) => ({
   id: `title-${index}`,
   title,
-  backend: "codex",
+  backend: index === 2 ? "claude" : "codex",
   project_id: "project",
   user_id: "owner",
   can_control: true,
   status: "completed",
-  updated_at: 10 - index,
+  updated_at: updatedAt[index].getTime(),
   turns: [],
   transcript: { parts: [] },
 }));
@@ -65,10 +71,18 @@ try {
         const page = await context.newPage();
         const errors = [];
         try {
+          await page.clock.setFixedTime(now);
           page.setDefaultTimeout(8000);
           page.on("pageerror", (error) =>
             errors.push(error.stack || String(error)),
           );
+          page.on("console", (message) => {
+            if (
+              message.type() === "error" &&
+              message.text().includes("Spool rendering failed")
+            )
+              errors.push(message.text());
+          });
           await page.addInitScript(() => {
             localStorage.setItem(
               "spool.ui-preferences.v1",
@@ -100,6 +114,7 @@ try {
               });
             if (endpoint === "/api/version")
               return json({ version: "fixture" });
+            if (endpoint === "/api/federation/agents") return json([]);
             if (endpoint === "/api/adb")
               return json({ available: false, reason: "disabled" });
             if (endpoint === "/api/profiles")
@@ -113,16 +128,17 @@ try {
                   { id: "project", name: "Project", can_create: true },
                 ],
                 chats,
+                sidebar: { revision: 1, pinned: ["title-2"] },
               });
             if (endpoint === "/api/agents")
-              return json([
-                {
-                  backend: "codex",
+              return json(
+                ["codex", "claude"].map((backend) => ({
+                  backend,
                   enabled: true,
                   installed: true,
                   catalog: { models: [] },
-                },
-              ]);
+                })),
+              );
             if (endpoint === "/api/permissions")
               return json({
                 backend: "codex",
@@ -146,9 +162,64 @@ try {
           const trigger = page.locator(".chat-title-trigger");
           const tooltip = page.getByRole("tooltip");
           await trigger.waitFor();
-          const assertFullTooltip = async () => {
+          const assertSidebarMetadata = async (chat, row) => {
+            const metadata = tooltip.locator(".chat-title-tooltip-meta");
+            const icon = metadata.getByRole("img", {
+              name: chat.backend === "claude" ? "Claude" : "Codex",
+            });
+            await icon.waitFor();
+            assert.ok(
+              await icon.evaluate((el) =>
+                [...el.querySelectorAll("path")].some((path) => {
+                  const fill = path.getAttribute("fill");
+                  return fill && fill !== "currentColor" && fill !== "none";
+                }),
+              ),
+              "The agent icon uses its brand colors",
+            );
+            const expected = await page.evaluate(async (timestamp) => {
+              const { messageTime } = await import("/src/message-footer.tsx");
+              return messageTime(timestamp, document.documentElement.lang);
+            }, chat.updated_at);
+            const time = metadata.locator("time");
+            assert.equal(await time.textContent(), expected.label);
+            assert.equal(
+              await time.getAttribute("datetime"),
+              expected.dateTime,
+            );
+            assert.equal(await time.getAttribute("title"), expected.title);
+            const iconBox = await icon.boundingBox();
+            const timeBox = await time.boundingBox();
+            const titleBox = await tooltip
+              .locator(".chat-title-tooltip-title")
+              .boundingBox();
+            assert.ok(
+              timeBox.x >= iconBox.x + iconBox.width &&
+                timeBox.y < iconBox.y + iconBox.height,
+            );
+            assert.ok(
+              titleBox.y >= timeBox.y + timeBox.height,
+              "Agent and update time appear above the title",
+            );
+            const rowBox = await row.locator("..").boundingBox();
+            const box = await tooltip.boundingBox();
+            assert.ok(
+              Math.abs(box.y - rowBox.y) < 1,
+              "The tooltip top aligns with the list row",
+            );
+          };
+          const assertFullTooltip = async (sidebarRow) => {
             await tooltip.waitFor();
-            assert.equal(await tooltip.textContent(), longTitle);
+            assert.equal(
+              await tooltip.locator(".chat-title-tooltip-title").textContent(),
+              longTitle,
+            );
+            if (sidebarRow) await assertSidebarMetadata(chats[0], sidebarRow);
+            else
+              assert.equal(
+                await tooltip.locator(".chat-title-tooltip-meta").count(),
+                0,
+              );
             const box = await tooltip.boundingBox();
             assert.ok(box.x >= 8 && box.x + box.width <= width - 7);
             assert.ok(box.y >= 8 && box.y + box.height <= 813);
@@ -211,7 +282,7 @@ try {
           await row.hover();
           await page.waitForTimeout(250);
           assert.equal(await tooltip.count(), 0);
-          await assertFullTooltip();
+          await assertFullTooltip(row);
           const sidebarTip = await tooltip.boundingBox();
           assert.ok(sidebarTip.width <= 300);
           if (width >= 500) {
@@ -221,6 +292,9 @@ try {
               "Sidebar title appears to the right of the sidebar",
             );
           }
+          await tooltip.evaluate((el) => {
+            el.scrollTop = 0;
+          });
           await page.screenshot({
             path: path.join(output, `${engine}-${width}-sidebar.png`),
           });
@@ -290,7 +364,7 @@ try {
             await page
               .getByRole("button", { name: "Open sidebar", exact: true })
               .click();
-          for (const section of ["recents", "projects"]) {
+          for (const section of ["pinned", "recents", "projects"]) {
             const shortRow = page
               .locator(`.${section} .nav-chat-open`)
               .filter({ hasText: titles[2] });
@@ -302,7 +376,11 @@ try {
             );
             await shortRow.hover();
             await tooltip.waitFor();
-            assert.equal(await tooltip.textContent(), titles[2]);
+            assert.equal(
+              await tooltip.locator(".chat-title-tooltip-title").textContent(),
+              titles[2],
+            );
+            await assertSidebarMetadata(chats[2], shortRow);
             assert.equal(await tooltip.getAttribute("data-side"), "right");
             assert.equal(
               await shortRow.getAttribute("aria-describedby"),
@@ -317,7 +395,10 @@ try {
               );
             }
             await page.screenshot({
-              path: path.join(output, `${engine}-${width}-${section}-short.png`),
+              path: path.join(
+                output,
+                `${engine}-${width}-${section}-short.png`,
+              ),
             });
             await page.mouse.move(width - 10, 400);
             await tooltip.waitFor({ state: "detached" });
@@ -339,6 +420,8 @@ try {
             wrappingAndScroll: true,
             headerLayout: true,
             shortSidebarTooltip: true,
+            sessionMetadata: true,
+            rowTopAlignment: true,
           });
         } catch (error) {
           await page.screenshot({ path: path.join(output, "failure.png") });

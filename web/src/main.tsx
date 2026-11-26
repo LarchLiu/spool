@@ -2426,6 +2426,7 @@ function App() {
         posting={posting}
         width={panels.leftWidth}
         t={t}
+        locale={locale}
         onClose={() => {
           setSidebar(false);
           if (!narrowLayout) setPanels((old) => ({ ...old, leftOpen: false }));

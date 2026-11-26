@@ -1244,7 +1244,7 @@ export function AgentsPage(props: PageProps) {
                 .filter(Boolean)
                 .join(" · ") || props.t("CLI executable (blank = auto-detect)"),
             status: `${props.t(agent.installed ? "Installed" : "Not installed")} · ${props.t(agent.enabled ? "Enabled" : "Disabled")}`,
-            icon: <AgentIcon backend={agent.backend} size={20} decorative />,
+            icon: <AgentIcon backend={agent.backend} size={20} decorative colored />,
           }))}
           onSelect={(id) =>
             setSelected(

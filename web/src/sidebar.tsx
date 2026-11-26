@@ -44,6 +44,7 @@ import { INITIAL_CHAT_LIMIT, SidebarChatList } from "./sidebar-chat-list";
 import { SessionNotificationIcon } from "./session-notification-icon";
 import { ProjectChatStatus } from "./project-chat-status";
 import type { SessionNotifications } from "./use-session-notifications";
+import type { Locale } from "./preferences";
 
 type Props = {
   user: User | null;
@@ -66,6 +67,7 @@ type Props = {
   posting: boolean;
   width: number;
   t: Translator;
+  locale: Locale;
   onClose: () => void;
   onResize: (width: number) => void;
   onChat: (chat: Chat) => void;
@@ -126,11 +128,20 @@ export function Sidebar(props: Props) {
     const title = chat.title === "New chat" ? t("New chat") : chat.title;
     const pinned = props.pinned.includes(chat.id);
     const canManage = canControlChat(chat, props.user?.id || "");
+    const backend =
+      chat.id === chatID && props.activeBackend
+        ? props.activeBackend
+        : chat.backend;
     return (
       <ChatActionMenu
         key={chat.id}
         title={title}
         tooltipSide="right"
+        tooltipSession={{
+          backend,
+          updatedAt: chat.updated_at,
+          locale: props.locale,
+        }}
         t={t}
         pinned={pinned}
         canManage={canManage}
@@ -184,13 +195,7 @@ export function Sidebar(props: Props) {
             >
               {!chat.participants?.length && (
                 <span className="nav-chat-agent">
-                  <AgentIcon
-                    backend={
-                      chat.id === chatID && props.activeBackend
-                        ? props.activeBackend
-                        : chat.backend
-                    }
-                  />
+                  <AgentIcon backend={backend} />
                 </span>
               )}
               <span className="nav-chat-title">{title}</span>
