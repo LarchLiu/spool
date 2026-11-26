@@ -52,12 +52,17 @@ process.exit(${status});
             ...process.env,
             GOCACHE: "caller-go-cache",
             GRADLE_USER_HOME: "caller-gradle-cache",
+            FORCE_COLOR: "1",
+            NO_COLOR: undefined,
           },
         },
       );
       assert.equal(result.status, status, result.stderr);
-      assert.match(result.stderr, new RegExp(`\\[lifecycle-test\\] \\d+\\.\\d+s \\(exit ${status}\\)`));
-      const state = JSON.parse(result.stdout);
+      const summary = status === 0 ? result.stdout : result.stderr;
+      assert.match(summary, new RegExp(`\\[lifecycle-test\\] \\d+\\.\\d+s \\(exit ${status}\\)`));
+      assert.ok(summary.includes(`\x1b[${status === 0 ? 32 : 31}m[lifecycle-test]`));
+      if (status === 0) assert.equal(result.stderr, "");
+      const state = JSON.parse(result.stdout.split("\n")[0]);
       assert.equal(state.TMPDIR, join(state.SPOOL_RUN_ROOT, "tmp"));
       assert.equal(state.TMP, state.TMPDIR);
       assert.equal(state.TEMP, state.TMPDIR);
@@ -132,7 +137,7 @@ try { console.log(run); } finally { await rm(run, {recursive:true,force:true}); 
         encoding: "utf8",
       });
       assert.equal(result.status, 0, result.stderr);
-      const run = result.stdout.trim();
+      const run = result.stdout.split("\n")[0];
       assert.ok(run.startsWith(join(root, "spool-")));
       assert.match(run, /[/\\]spool[/\\]users-test\./);
       const owner = await stat(join(run, "../.."));
@@ -209,7 +214,7 @@ process.kill = function(pid, signal) {
       0,
       "SIGTERM",
     ]);
-    assert.equal(existsSync(result.stdout.trim()), false);
+    assert.equal(existsSync(result.stdout.split("\n")[0]), false);
   },
 );
 

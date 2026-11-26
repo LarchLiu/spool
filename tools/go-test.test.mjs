@@ -42,25 +42,39 @@ test("Go timing reports retain failure output and support verbose output", () =>
   }
 });
 
-test("Go timing CLI preserves flags, streaming output and failing exit status", { skip: process.platform === "win32" }, (t) => {
+test("Go timing CLI preserves flags, streaming output, exit status and summary colors", { skip: process.platform === "win32" }, (t) => {
   const root = mkdtempSync(join(tmpdir(), "spool-go-timing-"));
   t.after(() => rmSync(root, { recursive: true, force: true }));
   const bin = join(root, "bin");
   mkdirSync(bin);
   const fakeGo = join(bin, "go");
   writeFileSync(fakeGo, `#!/bin/sh
-printf '%s\\n' "$*" >&2
-printf '%s\\n' '{"Action":"output","Package":"fixture","Test":"TestFailure","Output":"failure context\\n"}' '{"Action":"fail","Package":"fixture","Test":"TestFailure","Elapsed":0.2}' '{"Action":"output","Package":"fixture","Output":"FAIL fixture\\n"}' '{"Action":"fail","Package":"fixture","Elapsed":0.3}'
-exit 7
+printf '%s\\n' "$*"
+printf '%s\\n' '{"Action":"output","Package":"fixture","Test":"TestResult","Output":"test context\\n"}' "{\\"Action\\":\\"$RESULT\\",\\"Package\\":\\"fixture\\",\\"Test\\":\\"TestResult\\",\\"Elapsed\\":0.2}" "{\\"Action\\":\\"$RESULT\\",\\"Package\\":\\"fixture\\",\\"Elapsed\\":0.3}"
+exit "$STATUS"
 `, { mode: 0o755 });
-  const result = spawnSync(process.execPath, [fileURLToPath(new URL("./go-test.mjs", import.meta.url)), "-race", "-run", "TestFailure", "./fixture"], {
-    env: { ...process.env, PATH: bin + ":" + process.env.PATH }, encoding: "utf8", timeout: 10000,
-  });
-  assert.equal(result.status, 7, result.stderr);
-  assert.match(result.stderr, /test -json -race -run TestFailure \.\/fixture/);
-  assert.match(result.stderr, /\[go-test\].*exit 7/);
-  assert.match(result.stdout, /failure context/);
-  assert.match(result.stderr, /0\.200s fixture\/TestFailure/);
+  for (const status of [0, 7]) {
+    for (const [forceColor, noColor, colored] of [["1", undefined, true], ["1", "1", false], [undefined, undefined, false]]) {
+      const result = spawnSync(process.execPath, [fileURLToPath(new URL("./go-test.mjs", import.meta.url)), "-race", "-run", "TestResult", "./fixture"], {
+        env: { ...process.env, PATH: bin + ":" + process.env.PATH, STATUS: String(status), RESULT: status === 0 ? "pass" : "fail", FORCE_COLOR: forceColor, NO_COLOR: noColor },
+        encoding: "utf8", timeout: 10000,
+      });
+      assert.equal(result.status, status, result.stderr);
+      assert.match(result.stdout, /test -json -race -run TestResult \.\/fixture/);
+      const summary = status === 0 ? result.stdout : result.stderr;
+      assert.match(summary, new RegExp(`\\[go-test\\].*exit ${status}`));
+      assert.match(summary, /0\.300s fixture \((pass|fail)\)/);
+      assert.match(summary, /0\.200s fixture\/TestResult/);
+      if (status === 0) assert.equal(result.stderr, "");
+      else assert.match(result.stdout, /test context/);
+      if (colored) {
+        const color = status === 0 ? "\x1b[32m" : "\x1b[31m";
+        assert.ok(summary.includes(color + "[go-test]"));
+        assert.ok(summary.includes(color + "  package"));
+        assert.ok(summary.includes(color + "  test"));
+      } else assert.doesNotMatch(summary, /\x1b\[/);
+    }
+  }
 });
 
 test("Go timing CLI reports a missing Go tool as a failure", { skip: process.platform === "win32" }, (t) => {

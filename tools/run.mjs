@@ -4,6 +4,7 @@ import { spawn } from "node:child_process";
 import { mkdirSync, rmSync } from "node:fs";
 import { constants } from "node:os";
 import { join } from "node:path";
+import { printStatus } from "./status.mjs";
 import { createScratch } from "./test-scratch.mjs";
 
 const [task, command, ...args] = process.argv.slice(2);
@@ -82,4 +83,4 @@ try {
   rmSync(run, { recursive: true, force: true });
 }
 process.exitCode = interrupted ? 128 + constants.signals[interrupted] : code;
-console.error(`[${task}] ${((performance.now() - started) / 1000).toFixed(2)}s (exit ${process.exitCode})`);
+printStatus(`[${task}] ${((performance.now() - started) / 1000).toFixed(2)}s (exit ${process.exitCode})`, process.exitCode === 0);

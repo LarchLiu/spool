@@ -3,6 +3,7 @@
 import { spawn } from "node:child_process";
 import { constants } from "node:os";
 import { createInterface } from "node:readline";
+import { printStatus } from "./status.mjs";
 
 export class GoTestReporter {
   constructor({ verbose = false, write = (text) => process.stdout.write(text) } = {}) {
@@ -72,9 +73,9 @@ if (import.meta.main) {
     }
     process.exitCode = await completed;
     const summary = reporter.summary();
-    console.error(`[go-test] ${((performance.now() - started) / 1000).toFixed(2)}s; ${summary.packages.length} packages; ${summary.cachedPackages.length} cached; exit ${process.exitCode}`);
-    for (const pkg of summary.slowestPackages) console.error(`  package ${pkg.seconds.toFixed(3)}s ${pkg.name} (${pkg.result})`);
-    for (const test of summary.slowestTests) console.error(`  test    ${test.seconds.toFixed(3)}s ${test.package}/${test.name} (${test.result})`);
+    printStatus(`[go-test] ${((performance.now() - started) / 1000).toFixed(2)}s; ${summary.packages.length} packages; ${summary.cachedPackages.length} cached; exit ${process.exitCode}`, process.exitCode === 0);
+    for (const pkg of summary.slowestPackages) printStatus(`  package ${pkg.seconds.toFixed(3)}s ${pkg.name} (${pkg.result})`, pkg.result === "pass");
+    for (const test of summary.slowestTests) printStatus(`  test    ${test.seconds.toFixed(3)}s ${test.package}/${test.name} (${test.result})`, test.result === "pass");
   } catch (error) {
     console.error(error.message);
     process.exitCode = 1;
