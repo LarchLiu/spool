@@ -17,6 +17,7 @@
   "No authorized remote projects.": "没有获授权的远端项目。",
   "New remote conversation": "新建远端会话",
   "Remote calls": "跨服调用记录",
+  "Historical remote call. Open the original server to refresh or continue.": "这是历史调用记录。请打开原服务器刷新状态或继续对话。",
   "Output truncated. Read remote history for details.": "内容已截断，可读取远端历史了解详情。",
   "Remote history": "远端历史",
   "Use result as context": "将结果用作上下文",

@@ -96,6 +96,7 @@ const receipts = [];
 let failFirst = true;
 let projectWritable = true;
 let serversDown = false;
+let noServers = false;
 let historyWait;
 const unreachable = [];
 const localMessages = [];
@@ -143,7 +144,9 @@ try {
       case "servers":
         if (serversDown)
           return respond({ error: "Server list unavailable" }, 503);
-        return respond([{ id: "remote-server", name: "Trusted server" }]);
+        return respond(
+          noServers ? [] : [{ id: "remote-server", name: "Trusted server" }],
+        );
       case "projects":
         return respond([
           { id: "project-read", name: "Read only", can_create: false },
@@ -906,6 +909,99 @@ try {
   await page.getByText("Recovered remote answer", { exact: true }).waitFor();
   await page.keyboard.press("Escape");
   await callsDialog.waitFor({ state: "detached" });
+  // An imported native session has historical snapshots but no local live
+  // delegation records or available trusted servers. Its entry still appears.
+  noServers = true;
+  receipts.splice(
+    0,
+    receipts.length,
+    ...["completed", "awaiting_approval"].map((status, index) => ({
+      server: "original-server",
+      server_name: "Original PC",
+      history_only: true,
+      request_id: "historical-request-" + index,
+      message: "Historical task " + index,
+      task: {
+        task_id: "historical-task-" + index,
+        conversation_id: "original-conversation",
+        project_id: "original-project",
+        project_name: "Historical project",
+        agent: "codex",
+        status,
+        text:
+          status === "completed" ? "**Historical final answer**" : undefined,
+        pending_approval:
+          status === "awaiting_approval"
+            ? { id: "obsolete-approval", title: "Obsolete approval" }
+            : undefined,
+      },
+    })),
+  );
+  const beforeHistory = calls.length;
+  await page.reload();
+  await callsControl
+    .filter({ hasText: "Remote agents · 2 · Completed" })
+    .waitFor();
+  await openTask();
+  await callsDialog
+    .getByRole("heading", {
+      name: "@Original PC/Historical project",
+      exact: true,
+    })
+    .waitFor();
+  await callsDialog
+    .getByText("Historical final answer", { exact: true })
+    .waitFor();
+  await callsDialog
+    .getByText(
+      "Historical remote call. Open the original server to refresh or continue.",
+      { exact: true },
+    )
+    .waitFor();
+  for (const action of [
+    "Continue conversation",
+    "Remote history",
+    "Stop response",
+  ]) {
+    assert.equal(
+      await callsDialog
+        .getByRole("button", { name: action, exact: true })
+        .count(),
+      0,
+      "Historical snapshots grant no live task actions",
+    );
+  }
+  await callsDialog
+    .getByRole("button", { name: "Use result as context", exact: true })
+    .click();
+  assert.equal(
+    JSON.parse(await draft.inputValue()).reference_output,
+    "**Historical final answer**",
+  );
+  await openTask(1);
+  assert.equal(
+    await callsDialog.getByText("Obsolete approval", { exact: true }).count(),
+    0,
+  );
+  assert.equal(
+    await callsDialog
+      .getByRole("button", { name: "Use result as context", exact: true })
+      .count(),
+    0,
+  );
+  await page.screenshot({ path: join(output, "historical-remote-call.png") });
+  await closeCalls();
+  assert.ok(
+    calls
+      .slice(beforeHistory)
+      .every(
+        (call) =>
+          !["task", "approve", "cancel", "history", "projects"].includes(
+            call.operation,
+          ),
+      ),
+    "Historical records must not trigger remote control or polling requests",
+  );
   assert.deepEqual(errors, []);
   console.log(
     "Android-style remote calls entry, list and live details, Markdown history, approvals outside the composer form, close/back navigation, late history isolation, MCP routing, read-only project denial, chat isolation, quiet polling failures and narrow layouts passed",

@@ -91,7 +91,7 @@ final class NativeRemoteAgents implements NativeComposerCommands.ClientMenu {
             targetServer = targetProject = null; conversation = ""; agents = new JSONArray();
         }
         renderControls();
-        if (active && enabled && !chat.isEmpty() && servers.length() > 0 && writable) schedule();
+        if (active && enabled && !chat.isEmpty() && writable) schedule();
         else { main.removeCallbacks(poll); scheduled = false; }
     }
 
@@ -311,14 +311,14 @@ final class NativeRemoteAgents implements NativeComposerCommands.ClientMenu {
 
     private void refreshCalls() {
         scheduled = false;
-        if (!active || !enabled || !writable || chat.isEmpty() || servers.length() == 0 || polling) return;
+        if (!active || !enabled || !writable || chat.isEmpty() || polling) return;
         polling = true;
         request("calls", new JSONObject(), value -> {
             if (!active) { polling = false; return; }
             JSONArray latest = (JSONArray) value;
             for (int i = latest.length() - 1; i >= 0; i--) merge(at(latest, i));
             List<JSONObject> pending = new ArrayList<>();
-            for (int i = 0; i < calls.length(); i++) if (running(task(at(calls, i)))) pending.add(at(calls, i));
+            for (int i = 0; i < calls.length(); i++) if (!at(calls, i).optBoolean("history_only") && running(task(at(calls, i)))) pending.add(at(calls, i));
             if (pending.isEmpty()) { polling = false; changed(); schedule(); return; }
             int[] left = {pending.size()};
             for (JSONObject call : pending) request("task", taskFields(call), result -> {
@@ -329,7 +329,7 @@ final class NativeRemoteAgents implements NativeComposerCommands.ClientMenu {
     }
 
     private void schedule() {
-        if (active && enabled && writable && !chat.isEmpty() && servers.length() > 0 && !scheduled && !polling) {
+        if (active && enabled && writable && !chat.isEmpty() && !scheduled && !polling) {
             scheduled = true; main.postDelayed(poll, 1500);
         }
     }
@@ -403,17 +403,21 @@ final class NativeRemoteAgents implements NativeComposerCommands.ClientMenu {
         dialog.body.removeAllViews(); dialog.actions.removeAllViews();
         text(dialog.body, task.optString("agent") + " · " + task.optString("model") + " · " + task.optString("reasoning_effort") + " · " + status(task));
         text(dialog.body, call.optString("message"));
+        boolean historyOnly = call.optBoolean("history_only");
+        if (historyOnly) text(dialog.body, ui.t("Historical remote call. Open the original server to refresh or continue."));
         String result = task.optString(task.optString("status").equals("completed") ? "text" : "progress");
         if (!result.isEmpty()) dialog.body.addView(NativeMarkdown.view(ui, result, false, host::open));
         text(dialog.body, task.optString("error"));
         if (task.optBoolean("truncated")) text(dialog.body, ui.t("Output truncated. Read remote history for details."));
         JSONObject approval = task.optJSONObject("pending_approval");
-        if (approval != null) approval(call, approval);
-        if (running(task)) dialog.body.addView(ui.button(ui.t("Stop response"), false, () -> request("cancel", taskFields(call), value -> {
+        if (!historyOnly && approval != null) approval(call, approval);
+        if (!historyOnly && running(task)) dialog.body.addView(ui.button(ui.t("Stop response"), false, () -> request("cancel", taskFields(call), value -> {
             updateTask(call, value);
         })));
-        dialog.body.addView(ui.button(ui.t("Continue conversation"), false, () -> resume(call)));
-        dialog.body.addView(ui.button(ui.t("Remote history"), false, () -> history(call, "")));
+        if (!historyOnly) {
+            dialog.body.addView(ui.button(ui.t("Continue conversation"), false, () -> resume(call)));
+            dialog.body.addView(ui.button(ui.t("Remote history"), false, () -> history(call, "")));
+        }
         if (task.optString("status").equals("completed") && !task.optString("text").isEmpty()) {
             dialog.body.addView(ui.button(ui.t("Use result as context"), false, () -> {
                 if (!writable || busy || posting || running) return;
@@ -488,7 +492,7 @@ final class NativeRemoteAgents implements NativeComposerCommands.ClientMenu {
 
     private String label(JSONObject call) {
         JSONObject task = task(call), server = find(servers, call.optString("server"));
-        return "@" + (server == null ? call.optString("server") : server.optString("name")) + "/" + task.optString("project_name", task.optString("project_id"));
+        return "@" + (server == null ? call.optString("server_name", call.optString("server")) : server.optString("name")) + "/" + task.optString("project_name", task.optString("project_id"));
     }
     private String status(JSONObject task) {
         switch (task.optString("status")) {

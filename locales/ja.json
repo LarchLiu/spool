@@ -17,6 +17,7 @@
   "No authorized remote projects.": "許可されたリモートプロジェクトがありません。",
   "New remote conversation": "新しいリモート会話",
   "Remote calls": "リモート呼び出し履歴",
+  "Historical remote call. Open the original server to refresh or continue.": "過去の呼び出し記録です。状態の更新や会話の続行には元のサーバーを開いてください。",
   "Output truncated. Read remote history for details.": "出力は省略されています。詳細はリモート履歴を確認してください。",
   "Remote history": "リモート履歴",
   "Use result as context": "結果をコンテキストに使用",

@@ -17,6 +17,7 @@
   "No authorized remote projects.": "No authorized remote projects.",
   "New remote conversation": "New remote conversation",
   "Remote calls": "Remote calls",
+  "Historical remote call. Open the original server to refresh or continue.": "Historical remote call. Open the original server to refresh or continue.",
   "Output truncated. Read remote history for details.": "Output truncated. Read remote history for details.",
   "Remote history": "Remote history",
   "Use result as context": "Use result as context",

@@ -48,6 +48,8 @@ export type RemoteTask = {
 };
 type RemoteCall = {
   server: string;
+  server_name?: string;
+  history_only?: boolean;
   request_id: string;
   message?: string;
   task: RemoteTask;
@@ -247,7 +249,7 @@ export function useRemoteAgents({
     return () => controller.abort();
   }, [target?.server.id, target?.project.id, !!target?.conversation]);
   useEffect(() => {
-    if (!enabled || !originChat || !servers.length) return;
+    if (!enabled || !originChat) return;
     const controller = new AbortController();
     let timer: ReturnType<typeof setTimeout>;
     // An unreachable server would otherwise fail every 1.5 seconds and keep
@@ -274,7 +276,7 @@ export function useRemoteAgents({
         delay = 1500;
         values = await Promise.all(
           values.map(async (call) => {
-            if (!running(call.task)) return call;
+            if (call.history_only || !running(call.task)) return call;
             const pause = paused.get(call.server);
             if (pause && Date.now() < pause.until) {
               quiet = false;
@@ -315,7 +317,7 @@ export function useRemoteAgents({
       controller.abort();
       clearTimeout(timer);
     };
-  }, [enabled, account, originChat, scope, !!servers.length]);
+  }, [enabled, account, originChat, scope]);
   const key = `${menuServer?.id ?? ""}\n${query}\n${rows.map((item) => item.id).join(",")}`;
   const index =
     active.key === key
@@ -644,7 +646,7 @@ function remoteStatus(task: RemoteTask, t: Translator) {
 }
 
 function remoteLabel(call: RemoteCall, remote: RemoteAgents) {
-  return `@${remote.servers.find((item) => item.id === call.server)?.name || call.server.slice(0, 12)}/${call.task.project_name || call.task.project_id.slice(0, 12)}`;
+  return `@${remote.servers.find((item) => item.id === call.server)?.name || call.server_name || call.server.slice(0, 12)}/${call.task.project_name || call.task.project_id.slice(0, 12)}`;
 }
 
 export function RemoteCalls(props: RemoteCallsProps) {
@@ -875,12 +877,19 @@ function RemoteCallsDialog({
             {call.message && (
               <p className="remote-call-input">{call.message}</p>
             )}
+            {call.history_only && (
+              <p>
+                {t(
+                  "Historical remote call. Open the original server to refresh or continue.",
+                )}
+              </p>
+            )}
             {result && <MarkdownMessage t={t}>{result}</MarkdownMessage>}
             {call.task.truncated && (
               <p>{t("Output truncated. Read remote history for details.")}</p>
             )}
             {call.task.error && <p className="error">{call.task.error}</p>}
-            {call.task.pending_approval && (
+            {!call.history_only && call.task.pending_approval && (
               <ApprovalCard
                 key={call.task.pending_approval.id}
                 request={call.task.pending_approval}
@@ -892,32 +901,35 @@ function RemoteCallsDialog({
               />
             )}
             <div className="remote-agent-actions">
-              {running(call.task) ? (
-                <button
-                  type="button"
-                  disabled={busy}
-                  onClick={() => void action(() => remote.cancel(call))}
-                >
-                  {t("Stop response")}
-                </button>
-              ) : (
-                <button
-                  type="button"
-                  disabled={busy || remote.busy}
-                  onClick={() =>
-                    void action(async () => {
-                      if ((await remote.resume(call)) && mounted.current)
-                        onClose(true);
-                    })
-                  }
-                >
-                  {t("Continue conversation")}
+              {!call.history_only &&
+                (running(call.task) ? (
+                  <button
+                    type="button"
+                    disabled={busy}
+                    onClick={() => void action(() => remote.cancel(call))}
+                  >
+                    {t("Stop response")}
+                  </button>
+                ) : (
+                  <button
+                    type="button"
+                    disabled={busy || remote.busy}
+                    onClick={() =>
+                      void action(async () => {
+                        if ((await remote.resume(call)) && mounted.current)
+                          onClose(true);
+                      })
+                    }
+                  >
+                    {t("Continue conversation")}
+                  </button>
+                ))}
+              {!call.history_only && (
+                <button type="button" onClick={() => void readHistory(call)}>
+                  <History size={13} aria-hidden="true" />
+                  {t("Remote history")}
                 </button>
               )}
-              <button type="button" onClick={() => void readHistory(call)}>
-                <History size={13} aria-hidden="true" />
-                {t("Remote history")}
-              </button>
               {call.task.status === "completed" && call.task.text && (
                 <button
                   type="button"

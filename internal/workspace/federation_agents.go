@@ -71,11 +71,13 @@ type remoteAgentTask struct {
 }
 
 type remoteAgentCall struct {
-	Server     string          `json:"server"`
-	OriginChat string          `json:"origin_chat"`
-	RequestID  string          `json:"request_id"`
-	Message    string          `json:"message,omitempty"`
-	Task       remoteAgentTask `json:"task"`
+	Server      string          `json:"server"`
+	ServerName  string          `json:"server_name,omitempty"`
+	HistoryOnly bool            `json:"history_only,omitempty"`
+	OriginChat  string          `json:"origin_chat"`
+	RequestID   string          `json:"request_id"`
+	Message     string          `json:"message,omitempty"`
+	Task        remoteAgentTask `json:"task"`
 }
 
 type remoteAgentOperation struct {
@@ -658,7 +660,7 @@ func (a *App) remoteAgent(ctx context.Context, identity authIdentity, originChat
 		return body, err
 	}
 	if operation.Operation == "calls" {
-		return a.remoteAgentCalls(identity.User.ID, originChat)
+		return a.remoteAgentCalls(identity.User.ID, originChat, originTurn == "")
 	}
 	peer, err := federationPeer(a.store.db, operation.Server)
 	if err != nil || !peer.allows(identity.User.ID) {
@@ -755,7 +757,7 @@ func (a *App) updateRemoteAgentCall(user, peer string, task remoteAgentTask) {
 	}
 }
 
-func (a *App) remoteAgentCalls(user, origin string) (json.RawMessage, error) {
+func (a *App) remoteAgentCalls(user, origin string, includeHistory bool) (json.RawMessage, error) {
 	rows, err := a.store.db.Query(`SELECT body FROM federation_agent_calls WHERE user_id=? AND origin_chat=? ORDER BY updated_at DESC LIMIT 20`, user, origin)
 	if err != nil {
 		return nil, err
@@ -787,6 +789,36 @@ func (a *App) remoteAgentCalls(user, origin string) (json.RawMessage, error) {
 	}
 	if err := rows.Err(); err != nil {
 		return nil, err
+	}
+	if err := rows.Close(); err != nil {
+		return nil, err
+	}
+	// A locally discovered session can have been run by another Spool data
+	// directory. Its transcript is viewable here, but its capabilities are not.
+	// Recover display snapshots only; never turn them into live MCP references.
+	if includeHistory {
+		if chat, ok := a.store.getSession(origin); ok && chat.LocalSession {
+			history, _ := a.store.remoteAgentHistory(chat)
+			known := map[string]bool{}
+			for _, body := range items {
+				var call remoteAgentCall
+				if json.Unmarshal(body, &call) == nil {
+					known[call.Server+":"+call.Task.ID] = true
+				}
+			}
+			for _, call := range history {
+				if len(items) >= 20 {
+					break
+				}
+				if !known[call.Server+":"+call.Task.ID] {
+					body, err := json.Marshal(call)
+					if err != nil {
+						return nil, err
+					}
+					items = append(items, body)
+				}
+			}
+		}
 	}
 	return json.Marshal(items)
 }

@@ -28,7 +28,7 @@ public class MainActivityRemoteAgentsTest {
     private static String envelope(int status, Object value) { return json("status", status, "body", value.toString()).toString(); }
     private static JSONArray targets() { return new JSONArray().put(json("id", "server-b", "name", "Trusted B")); }
     private static final class Fixture {
-        boolean trusted = true, failDelegate, failServers, projectWritable = true, bothAgents;
+        boolean trusted = true, failDelegate, failServers, projectWritable = true, bothAgents, historyOnly;
         JSONObject task;
         final List<JSONObject> requests = new ArrayList<>();
         String respond(List<String> call) {
@@ -63,7 +63,7 @@ public class MainActivityRemoteAgentsTest {
                                 "text", "Unfinished text must not enter context", "pending_approval", json("id", "remote-approval", "title", "Remote approval",
                                         "fields", new JSONArray().put(json("name", "confirm", "label", "Confirm remote action", "type", "boolean"))));
                         return envelope(200, task);
-                    case "calls": return envelope(200, task == null ? new JSONArray() : new JSONArray().put(json("server", "server-b", "task", task)));
+                    case "calls": return envelope(200, task == null ? new JSONArray() : new JSONArray().put(json("server", "server-b", "server_name", "Original PC", "history_only", historyOnly, "task", task)));
                     case "task": return envelope(200, task);
                     case "approve":
                         assertEquals("remote-turn", input.getJSONObject("approval").getString("turn_id"));
@@ -418,6 +418,24 @@ public class MainActivityRemoteAgentsTest {
             int count = fixture.requests.size();
             Shadows.shadowOf(Looper.getMainLooper()).idleFor(java.time.Duration.ofSeconds(3)); drain(h);
             assertEquals(count, fixture.requests.size());
+        }
+    }
+
+    @Test public void historicalCallsRemainVisibleWithoutTrustAndOfferNoRemoteControls() throws Exception {
+        for (String status : new String[] {"completed", "awaiting_approval"}) try (MainActivityGoalTest.Harness h = new MainActivityGoalTest.Harness(true)) {
+            Fixture fixture = new Fixture(); fixture.trusted = false; fixture.historyOnly = true;
+            fixture.task = json("task_id", "historical-task", "project_id", "project-b", "project_name", "Build project", "conversation_id", "original-conversation",
+                    "agent", "codex", "status", status, "text", status.equals("completed") ? "**Historical final answer**" : "",
+                    "pending_approval", json("id", "obsolete-approval", "title", "Obsolete approval"));
+            prepare(h, fixture);
+            Shadows.shadowOf(Looper.getMainLooper()).idleFor(java.time.Duration.ofMillis(1500)); drain(h);
+            String label = status.equals("completed") ? "Completed" : "Approval required";
+            View entry = button(h.composer(), "Remote agents · 1 · " + label); assertNotNull(entry); entry.performClick();
+            button(dialog(h).body, "@Original PC/Build project · " + label).performClick();
+            assertNull(button(dialog(h).body, "Continue conversation")); assertNull(button(dialog(h).body, "Remote history"));
+            assertNull(button(dialog(h).body, "Stop response")); assertNull(button(dialog(h).body, "Allow once"));
+            assertEquals(status.equals("completed"), button(dialog(h).body, "Use result as context") != null);
+            assertTrue(fixture.requests.stream().noneMatch(input -> input.optString("operation").equals("task")));
         }
     }
 
