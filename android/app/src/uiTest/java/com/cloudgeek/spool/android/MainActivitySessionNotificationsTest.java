@@ -35,17 +35,24 @@ public class MainActivitySessionNotificationsTest {
         try (MainActivityGoalTest.Harness h = new MainActivityGoalTest.Harness(true)) {
             start(h);
             NativeSessionNotifications states = h.get("sessionNotifications");
+            NativeSidebar initialSidebar = h.get("sidebar");
+            initialSidebar.projectRows.get(0).toggle.performClick();
+            NativeProjectRow collapsedProject = initialSidebar.projectRows.get(0);
             for (String kind : new String[] {"completed", "failed", "approval"}) {
                 event("chat-one", kind, "alice"); event("chat-two", kind, "alice");
                 assertEquals("", states.kind("chat-one")); assertEquals(kind, states.kind("chat-two"));
                 NativeSidebar sidebar = h.get("sidebar");
                 assertTrue(sidebar.chatRows.stream().filter(row -> row.chatID.equals("chat-two")).allMatch(row -> row.notification != null));
+                assertSame(collapsedProject, sidebar.projectRows.get(0));
+                assertNotNull(collapsedProject.status.findViewWithTag("session-notification:" + kind));
+                assertFalse(sidebar.state.expanded.contains("project-one"));
             }
             event("chat-two", "failed", "bob"); assertEquals("approval", states.kind("chat-two"));
             NativeSidebar sidebar = h.get("sidebar");
             sidebar.chatRows.stream().filter(row -> row.chatID.equals("chat-two")).findFirst().get().open.performClick();
             assertEquals("chat-two", h.<String>get("chatID")); assertEquals("", states.kind("chat-two"));
             h.call("openSidebar"); for (NativeChatLink row : h.<NativeSidebar>get("sidebar").chatRows) assertNull(row.notification);
+            assertEquals(android.view.View.GONE, h.<NativeSidebar>get("sidebar").projectRows.get(0).status.getVisibility());
             h.call("clearWorkspace"); assertEquals("", states.kind("chat-one")); assertEquals("", states.kind("chat-two"));
         }
     }

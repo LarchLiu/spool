@@ -57,6 +57,7 @@ final class NativeSidebar extends LinearLayout {
     void notifications(NativeSessionNotifications value) {
         notifications = value;
         for (NativeChatLink row : chatRows) row.notification(value.kind(row.chatID));
+        for (NativeProjectRow row : projectRows) row.status(chats, value);
     }
 
     void chatOptions(BiConsumer<JSONObject, View> action) { chatOptions = action; }
@@ -211,6 +212,7 @@ final class NativeSidebar extends LinearLayout {
             for (int i = 0; i < Math.min(projects.length(), state.projectLimit); i++) {
                 JSONObject value = projects.optJSONObject(i); String id = value.optString("id"); boolean open = state.expanded.contains(id);
                 NativeProjectRow row = new NativeProjectRow(ui, () -> { if (!active) return; state.toggle(id); render(); }, () -> { if (active && !cached) create.accept(id); }); row.bind(value, open, posting || cached); row.toggle.setTag("project:" + id); row.create.setTag("new:" + id);
+                row.status(chats, notifications);
                 navigation.addView(row, new LayoutParams(-1, ui.dp(31))); projectRows.add(row); if (open) list(id, true); navigation.addView(ui.space(5));
             }
             if (projects.length() == 0) empty("No authorized projects", false);
