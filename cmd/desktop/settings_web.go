@@ -141,6 +141,11 @@ func (p *panel) loadSettingsView() error {
 	p.settingsView = view
 	page := view.Page()
 	page.OnWillNavigate(func(e *mygo.NavigateEvent) {
+		if failure, ok := desktopRenderErrorNavigation(p.settingsURL(), e.URL); ok {
+			e.PreventDefault()
+			logDesktopRenderFailure("settings", failure)
+			return
+		}
 		if p.settingsDocumentAllowed(e.URL) {
 			return
 		}
@@ -160,8 +165,20 @@ func (p *panel) loadSettingsView() error {
 		})
 	}
 	page.OnDidFailLoad(func(err *mygo.LoadError) { fail(err) })
-	page.OnRenderProcessGone(func(reason string) { fail(fmt.Errorf("settings renderer stopped: %s", reason)) })
+	recovery := &desktopRendererRecovery{}
+	page.OnRenderProcessGone(func(reason string) {
+		if p.quitting || p.settingsView != view {
+			return
+		}
+		if !p.recoverDesktopRenderer(page, recovery, "settings", reason) {
+			fail(fmt.Errorf("settings renderer stopped: %s", reason))
+		}
+	})
 	page.OnDidFinishLoad(func() {
+		if p.quitting || p.settingsView != view {
+			return
+		}
+		p.settingsFailed = false
 		p.sendWindowChrome(view)
 		p.sendDesktopAppearance(view)
 		if p.tab != "Chat" {

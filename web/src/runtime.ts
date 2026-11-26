@@ -23,6 +23,29 @@ export const desktopServerConnectPath = "/__desktop/server-connect";
 export const desktopServerReadyPath = "/__desktop/server-ready";
 export const desktopSidebarWidthPath = "/__desktop/sidebar-width";
 
+// Report type and React component locations, never exception messages or chat
+// content. Native records this even when the failed App can no longer run effects.
+export function reportDesktopRenderFailure(
+  name: string,
+  components: string,
+  fatal: boolean,
+  surface: unknown = globalThis,
+): void {
+  try {
+    desktopNavigationHint(
+      "/__desktop/render-error?" +
+        new URLSearchParams({
+          name: /^[A-Za-z0-9_.-]{1,80}$/.test(name) ? name : "Error",
+          components: components.slice(0, 2048),
+          fatal: String(fatal),
+        }),
+      surface,
+    );
+  } catch {
+    // Diagnostics must not throw from the recovery boundary itself.
+  }
+}
+
 export type DesktopServerStatus =
   "connected" | "connecting" | "login" | "error" | "disconnected";
 export type DesktopServerConnection = {

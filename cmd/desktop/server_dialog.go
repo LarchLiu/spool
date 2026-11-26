@@ -60,6 +60,9 @@ func (p *panel) showServerDialog(id string) {
 	p.window.Invalidate()
 	if p.serverDialog != nil {
 		_ = serverDialogChanged.EmitPage(p.serverDialog.Page(), p.serverDialogSnapshot())
+		if p.serverDialogFailed {
+			p.revealServerDialog()
+		}
 		return
 	}
 	p.prepareServerDialog()
@@ -83,6 +86,7 @@ window.mygo.on("spool:server-dialog", value => {
 		return
 	}
 	p.serverDialog = dialog
+	p.serverDialogFailed = false
 	fail := func(err error) {
 		if p.serverDialog != dialog || p.quitting {
 			return
@@ -97,6 +101,22 @@ window.mygo.on("spool:server-dialog", value => {
 		_, _ = mygo.Dialog.Message(mygo.MessageOptions{Parent: p.window, Type: mygo.MessageError, Title: p.tr("Settings"), Message: err.Error()})
 	}
 	dialog.Page().OnWillNavigate(func(e *mygo.NavigateEvent) {
+		if failure, ok := desktopRenderErrorNavigation(p.serverDialogURL(), e.URL); ok {
+			e.PreventDefault()
+			logDesktopRenderFailure("server-dialog", failure)
+			if failure.fatal {
+				p.window.Update(func() {
+					if p.quitting || p.serverDialog != dialog {
+						return
+					}
+					p.serverDialogFailed = true
+					p.serverDialogHeight = 0
+					p.window.Invalidate()
+					p.revealServerDialog()
+				})
+			}
+			return
+		}
 		if p.serverDialogDocumentAllowed(e.URL) {
 			return
 		}
@@ -106,6 +126,11 @@ window.mygo.on("spool:server-dialog", value => {
 		}
 	})
 	dialog.Page().SetWindowOpenHandler(func(req mygo.WindowOpenRequest) *mygo.WindowOptions { p.openChatLink(req.URL); return nil })
+	dialog.Page().OnDidNavigate(func(string) {
+		if p.serverDialog == dialog {
+			p.serverDialogFailed = false
+		}
+	})
 	dialog.Page().OnDidFailLoad(func(err *mygo.LoadError) {
 		fail(err)
 	})
@@ -115,6 +140,18 @@ window.mygo.on("spool:server-dialog", value => {
 	if err := dialog.Page().LoadURL(p.serverDialogURL()); err != nil {
 		fail(err)
 	}
+}
+
+// Both the editor and the application recovery screen are usable modal content.
+// A preloaded recovery screen must wait until the user requests the dialog.
+func (p *panel) revealServerDialog() {
+	if p.quitting || p.serverDialog == nil || !p.serverDialogRequested || p.serverDialogOpen {
+		return
+	}
+	p.serverDialogOpen = true
+	p.sendDesktopAppearance(p.serverDialog)
+	p.window.Invalidate()
+	p.serverDialog.Focus()
 }
 
 func (p *panel) hideServerDialog() {
@@ -233,12 +270,8 @@ func (s *desktopServerSettings) Ready(ctx context.Context, id string, height int
 			s.panel.serverDialogHeight = next
 			s.panel.window.Invalidate()
 		}
-		if !s.panel.serverDialogOpen {
-			s.panel.serverDialogOpen = true
-			s.panel.sendDesktopAppearance(s.panel.serverDialog)
-			s.panel.window.Invalidate()
-			s.panel.serverDialog.Focus()
-		}
+		s.panel.serverDialogFailed = false
+		s.panel.revealServerDialog()
 		return true, nil
 	})
 }

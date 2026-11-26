@@ -104,6 +104,11 @@ func (p *panel) loadChatView(address string) error {
 	}
 	state := p.serverChats[id]
 	p.chatView, p.chatURL, p.chatFailed, p.chatLoaded = state.view, state.address, state.failed, state.loaded
+	if state.renderFailed {
+		// The failed App cannot send another ready hint when this cached page
+		// is selected. Its recovery screen is already usable.
+		p.chatPresentedView = state.view
+	}
 	p.sendDesktopServers()
 	p.window.Invalidate()
 	if p.tab == "Chat" && p.chatPresentedView == p.chatView && !p.serverDialogOpen {
@@ -154,12 +159,33 @@ func (p *panel) loadDesktopServerChat(id, address string) error {
 		// Register guards before the first navigation. Never trust additional
 		// origins or load external content into a privileged desktop window.
 		page.OnWillNavigate(func(e *mygo.NavigateEvent) {
+			if failure, ok := desktopRenderErrorNavigation(state.address, e.URL); ok {
+				e.PreventDefault()
+				logDesktopRenderFailure("chat:"+id, failure)
+				if failure.fatal {
+					p.window.Update(func() {
+						if p.quitting || p.serverChats[id] != state {
+							return
+						}
+						state.renderFailed = true
+						if p.chatView == view {
+							p.chatPresentedView = view
+							p.window.Invalidate()
+							if p.tab == "Chat" && !p.serverDialogOpen {
+								view.Focus()
+							}
+						}
+					})
+				}
+				return
+			}
 			if paint, ok := desktopServerReadyNavigation(state.address, e.URL); ok {
 				e.PreventDefault()
 				p.window.Update(func() {
 					if p.quitting || p.serverChats[id] != state {
 						return
 					}
+					state.renderFailed = false
 					// Acknowledge even an outgoing page so its notification retry
 					// stops. Readiness hints can otherwise lose a navigation race
 					// with the page's session/name/status notifications.
@@ -322,6 +348,11 @@ func (p *panel) loadDesktopServerChat(id, address string) error {
 			p.openChatLink(req.URL)
 			return nil
 		})
+		page.OnDidNavigate(func(string) {
+			if p.serverChats[id] == state {
+				state.renderFailed = false
+			}
+		})
 		page.OnDidFinishLoad(func() {
 			if p.serverChats[id] != state {
 				return
@@ -357,15 +388,7 @@ func (p *panel) loadDesktopServerChat(id, address string) error {
 			}
 		})
 		page.OnRenderProcessGone(func(reason string) {
-			if p.serverChats[id] != state {
-				return
-			}
-			state.failed = true
-			p.recordDesktopServerState(id, "error")
-			if p.chatView == view {
-				p.chatFailed = true
-				p.chatError(fmt.Errorf("%s: %s", p.tr("Chat renderer stopped. Reopen Chat to reload."), reason))
-			}
+			p.desktopChatRendererGone(id, state, reason)
 		})
 	}
 	if state.address != address || state.failed {

@@ -1449,5 +1449,7 @@
   "Each uploaded file must be at most 64 MB": "各アップロードファイルは 64 MB 以下にしてください",
   "Could not save uploaded file": "アップロードしたファイルを保存できませんでした",
   "Upload one file per request": "リクエストごとに 1 つのファイルをアップロードしてください",
-  "A file with this name already exists": "同じ名前のファイルが既に存在します"
+  "A file with this name already exists": "同じ名前のファイルが既に存在します",
+  "The page could not be displayed.": "ページを表示できませんでした。",
+  "Try again to restore the workspace.": "再試行してワークスペースを復元してください。"
 }

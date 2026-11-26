@@ -313,6 +313,34 @@ test("blocked connection or invalid JSON retries rather than losing synchronizat
   assert.equal(f.sockets.length, 2);
 });
 
+test("relay disconnect during hello, view or heartbeat send reconnects without escaping into React", (t) => {
+  t.mock.timers.enable({ apis: ["setTimeout", "Date"] });
+  for (const action of ["hello", "view", "visibility", "heartbeat", "refresh"]) {
+    const f = fixture(t);
+    const socket = f.sockets[0];
+    if (action !== "hello") {
+      socket.opened();
+      socket.emit("ready", true);
+    }
+    socket.send = () => { throw new DOMException("Relay connection lost", "InvalidStateError"); };
+    assert.doesNotThrow(() => {
+      if (action === "hello") socket.opened();
+      else if (action === "view") f.stream.view();
+      else if (action === "visibility") f.stream.visibility();
+      else if (action === "heartbeat") socket.emit("ping", true);
+      else f.stream.resume();
+    }, action);
+    assert.equal(socket.closed, true, `${action} closes the broken socket`);
+    assert.deepEqual(f.received.at(-1), ["connected", false]);
+    t.mock.timers.tick(610);
+    assert.equal(f.sockets.length, 2, `${action} reconnects`);
+    f.sockets[1].opened();
+    f.sockets[1].emit("ready", true);
+    assert.deepEqual(f.received.at(-1), ["connected", true]);
+    f.stream.close();
+  }
+});
+
 test("private messages require a ready connection and wait for the server echo", async (t) => {
   const f = fixture(t);
   await assert.rejects(f.stream.sendMessage("bob", "hello"), {

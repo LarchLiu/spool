@@ -16,7 +16,7 @@ func (p *panel) checkDesktopServerHealth() {
 	p.checkDesktopFederationHealth(time.Now())
 	for id, chat := range p.serverChats {
 		server, ok := p.servers.find(id)
-		if !ok || !server.Enabled || chat.authenticated && !chat.failed || chat.pageStatus != "login" && chat.pageStatus != "error" || chat.healthChecking || time.Since(chat.lastHealthCheck) < 15*time.Second {
+		if !ok || !server.Enabled || chat.rendererRecovery.blocked(time.Now()) || chat.authenticated && !chat.failed || chat.pageStatus != "login" && chat.pageStatus != "error" || chat.healthChecking || time.Since(chat.lastHealthCheck) < 15*time.Second {
 			continue
 		}
 		chat.lastHealthCheck = time.Now()
@@ -42,7 +42,7 @@ func (p *panel) checkDesktopServerHealth() {
 func (p *panel) applyDesktopServerHealth(server desktopServer, chat *desktopServerChat, revision uint64, reachable bool) {
 	chat.healthChecking = false
 	current, exists := p.servers.find(server.ID)
-	if p.quitting || !exists || !current.Enabled || p.serverChats[server.ID] != chat || chat.authenticated && !chat.failed || chat.pageStatus != "login" && chat.pageStatus != "error" || chat.statusRevision != revision {
+	if p.quitting || !exists || !current.Enabled || p.serverChats[server.ID] != chat || chat.rendererRecovery.blocked(time.Now()) || chat.authenticated && !chat.failed || chat.pageStatus != "login" && chat.pageStatus != "error" || chat.statusRevision != revision {
 		return
 	}
 	if server.ID != localDesktopServer && server.ConnectionID != localDesktopServer && desktopNetworkKey(current) != desktopNetworkKey(server) {

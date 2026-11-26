@@ -52,6 +52,7 @@ type panel struct {
 	serverDialogID         string
 	serverDialogRequested  bool
 	serverDialogOpen       bool
+	serverDialogFailed     bool
 	serverDialogHeight     float32
 	serverPairing          *spoolnet.PairingSession
 	quitting               bool
@@ -127,11 +128,11 @@ func runDesktop() (runErr error) {
 	development := mygo.IsDev()
 	root := flag.String("data-dir", workspace.DefaultDataDir(development), "Data directory (database in db/spool.sqlite)")
 	smoke := flag.String("release-smoke", "", "Probe the packaged desktop using fresh temporary data; write a JSON report")
-	smokeProbe := flag.String("smoke-probe", "", "Run only the notifications, servers or server-startup native probe (requires --release-smoke)")
+	smokeProbe := flag.String("smoke-probe", "", "Run only the notifications, servers, server-startup or renderer native probe (requires --release-smoke)")
 	smokeHistoryPath := flag.String("smoke-release-history", "", "ReleaseHistory JSON fixture for --release-smoke screenshots only")
 	flag.Parse()
-	if *smokeProbe != "" && (*smoke == "" || (*smokeProbe != "notifications" && *smokeProbe != "servers" && *smokeProbe != "server-startup")) {
-		return fmt.Errorf("--smoke-probe only accepts notifications, servers or server-startup and requires --release-smoke")
+	if *smokeProbe != "" && (*smoke == "" || (*smokeProbe != "notifications" && *smokeProbe != "servers" && *smokeProbe != "server-startup" && *smokeProbe != "renderer")) {
+		return fmt.Errorf("--smoke-probe only accepts notifications, servers, server-startup or renderer and requires --release-smoke")
 	}
 	var smokeHistory *appupdate.ReleaseHistory
 	if *smokeHistoryPath != "" {
@@ -361,6 +362,8 @@ func runDesktop() (runErr error) {
 				go p.smokeNotificationsOnly(*smoke, smokeResult)
 			} else if *smokeProbe == "servers" {
 				go p.smokeServersOnly(*smoke, smokeResult)
+			} else if *smokeProbe == "renderer" {
+				go p.smokeRendererOnly(*smoke, smokeResult)
 			} else if startupProbe != nil {
 				go startupProbe.run(p, *smoke, smokeResult)
 			} else {

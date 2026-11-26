@@ -1449,5 +1449,7 @@
   "Each uploaded file must be at most 64 MB": "Each uploaded file must be at most 64 MB",
   "Could not save uploaded file": "Could not save uploaded file",
   "Upload one file per request": "Upload one file per request",
-  "A file with this name already exists": "A file with this name already exists"
+  "A file with this name already exists": "A file with this name already exists",
+  "The page could not be displayed.": "The page could not be displayed.",
+  "Try again to restore the workspace.": "Try again to restore the workspace."
 }

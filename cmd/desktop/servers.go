@@ -24,20 +24,22 @@ const desktopServerReadyPath = "/__desktop/server-ready"
 const desktopSidebarWidthPath = "/__desktop/sidebar-width"
 
 type desktopServerChat struct {
-	view            *mygo.WebView
-	remoteDesktop   *mygo.Window
-	address         string
-	loaded          bool
-	failed          bool
-	status          string
-	statusRevision  uint64
-	retrying        bool
-	lastRetry       time.Time
-	pageStatus      string
-	healthFailed    bool
-	healthChecking  bool
-	lastHealthCheck time.Time
-	authenticated   bool
+	view             *mygo.WebView
+	remoteDesktop    *mygo.Window
+	address          string
+	loaded           bool
+	failed           bool
+	renderFailed     bool
+	status           string
+	statusRevision   uint64
+	retrying         bool
+	lastRetry        time.Time
+	pageStatus       string
+	healthFailed     bool
+	healthChecking   bool
+	lastHealthCheck  time.Time
+	rendererRecovery desktopRendererRecovery
+	authenticated    bool
 	// Public federation identity, when the server reports one.
 	serverID         string
 	identityChecking bool

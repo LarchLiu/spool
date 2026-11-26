@@ -55,6 +55,25 @@ test("SSE initializes and reconnects without a redundant history GET", () => {
   assert.equal(f.source.closed, true);
 });
 
+test("invalid relay event JSON keeps the last snapshot and accepts a later reconnect", () => {
+  const f = fixture();
+  try {
+    const snapshot = { id: "chat-1", turns: [{ id: "turn-1" }] };
+    f.source.emit("snapshot", snapshot);
+    const before = f.received.filter(([kind]) => kind === "snapshot").length;
+    assert.doesNotThrow(() => f.source.emit("snapshot", undefined));
+    assert.equal(f.received.filter(([kind]) => kind === "snapshot").length, before);
+    assert.deepEqual(f.received.at(-2), ["connected", false]);
+    assert.ok(f.received.at(-1)[1] instanceof SyntaxError);
+    f.source.onerror();
+    f.source.emit("snapshot", { ...snapshot, updated_at: 3 });
+    assert.deepEqual(f.received.at(-1), ["snapshot", { ...snapshot, updated_at: 3 }]);
+    assert.equal(f.requests.length, 0, "a bad frame cannot discard the initialized conversation");
+  } finally {
+    f.close();
+  }
+});
+
 test("failed initialization fetches once to surface HTTP/auth errors and can retry", async () => {
   const f = fixture();
   f.source.onerror();

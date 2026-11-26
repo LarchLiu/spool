@@ -22,6 +22,7 @@ import ReactMarkdown, {
   type ExtraProps,
 } from "react-markdown";
 import remarkGfm from "remark-gfm";
+import { RenderBoundary } from "./render-boundary.js";
 import { LocalFileContext } from "./local-file-context.js";
 import { localFileTarget } from "./local-file-links.js";
 import { copyMessageText } from "./copy-text.js";
@@ -328,13 +329,15 @@ export const MarkdownPreview = memo(function MarkdownPreview({
 }) {
   return (
     <span className="markdown markdown-preview">
-      <ReactMarkdown
-        remarkPlugins={plugins}
-        components={previewComponents}
-        skipHtml
-      >
-        {children}
-      </ReactMarkdown>
+      <RenderBoundary fallback={children}>
+        <ReactMarkdown
+          remarkPlugins={plugins}
+          components={previewComponents}
+          skipHtml
+        >
+          {children}
+        </ReactMarkdown>
+      </RenderBoundary>
     </span>
   );
 });
@@ -348,16 +351,20 @@ export const MarkdownMessage = memo(function MarkdownMessage({
 }) {
   return (
     <div className="markdown">
-      <MarkdownTranslator.Provider value={t}>
-        <ReactMarkdown
-          remarkPlugins={plugins}
-          components={components}
-          urlTransform={messageURL}
-          skipHtml
-        >
-          {children}
-        </ReactMarkdown>
-      </MarkdownTranslator.Provider>
+      <RenderBoundary
+        fallback={<pre className="markdown-fallback">{children}</pre>}
+      >
+        <MarkdownTranslator.Provider value={t}>
+          <ReactMarkdown
+            remarkPlugins={plugins}
+            components={components}
+            urlTransform={messageURL}
+            skipHtml
+          >
+            {children}
+          </ReactMarkdown>
+        </MarkdownTranslator.Provider>
+      </RenderBoundary>
     </div>
   );
 });

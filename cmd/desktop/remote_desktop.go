@@ -114,6 +114,11 @@ window.mygo?.on("spool:remote-desktop-server", name => {
 		window.SetTitle(p.remoteDesktopTitle(id))
 	})
 	page.OnWillNavigate(func(event *mygo.NavigateEvent) {
+		if failure, ok := desktopRenderErrorNavigation(address, event.URL); ok {
+			event.PreventDefault()
+			logDesktopRenderFailure("remote-desktop:"+id, failure)
+			return
+		}
 		if chatReservedNavigation(address, event.URL, desktopRemoteDesktopClosePath) {
 			event.PreventDefault()
 			window.Close()

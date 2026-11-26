@@ -1,5 +1,6 @@
 import { useEffect, useState } from "react";
 import { createRoot } from "react-dom/client";
+import { ApplicationBoundary } from "./application-boundary";
 import { api, setCSRF } from "./api";
 import { appBasePath } from "./app-path";
 import { parsePreferences, preferencesStorageKey } from "./preferences";
@@ -94,4 +95,8 @@ function RemoteDesktopPage() {
   );
 }
 
-createRoot(document.getElementById("root")!).render(<RemoteDesktopPage />);
+createRoot(document.getElementById("root")!).render(
+  <ApplicationBoundary>
+    <RemoteDesktopPage />
+  </ApplicationBoundary>,
+);

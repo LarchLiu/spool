@@ -37,8 +37,18 @@ export function subscribeChatEvents(
   const listen = <T>(name: string, receive: (value: T) => void) => {
     source.addEventListener(name, (event) => {
       if (controller.signal.aborted) return;
+      let value: T;
+      try {
+        value = JSON.parse((event as MessageEvent).data) as T;
+      } catch (error) {
+        // Do not mark an invalid frame healthy or let a parse exception escape
+        // the event callback. EventSource can continue with the next snapshot.
+        handlers.connected(false);
+        handlers.error(error);
+        return;
+      }
       handlers.connected(true);
-      receive(JSON.parse((event as MessageEvent).data) as T);
+      receive(value);
     });
   };
   listen<Chat>("snapshot", (chat) => {

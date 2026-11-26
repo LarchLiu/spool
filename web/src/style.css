@@ -1,5 +1,30 @@
 @import "./segmented-tabs.css";
 
+.application-error {
+  min-height: 100dvh;
+  box-sizing: border-box;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  padding: 48px 24px;
+  text-align: center;
+}
+.application-error h1 {
+  font-size: 20px;
+}
+.application-error p {
+  color: var(--muted);
+}
+.application-error > div {
+  display: flex;
+  gap: 12px;
+}
+.markdown .markdown-fallback {
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+}
+
 :root {
   font-family:
     system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;

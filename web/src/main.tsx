@@ -11,6 +11,7 @@ import React, {
   type CSSProperties,
 } from "react";
 import { createRoot } from "react-dom/client";
+import { ApplicationBoundary } from "./application-boundary";
 import {
   ArrowUp,
   ArrowDown,
@@ -3298,6 +3299,8 @@ interface BeforeInstallPromptEvent extends Event {
 createRoot(document.getElementById("root")!).render(
   <>
     <DesktopWindowChrome />
-    <App />
+    <ApplicationBoundary>
+      <App />
+    </ApplicationBoundary>
   </>,
 );

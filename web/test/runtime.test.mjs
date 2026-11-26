@@ -19,9 +19,25 @@ import {
   subscribeDesktopFileAccess,
   notifyDesktopSessionChanged,
   notifyDesktopViewChanged,
+  reportDesktopRenderFailure,
 } from "../.test-build/runtime.js";
 import { resolveLanguage, resolveTheme } from "../.test-build/preferences.js";
 import { DesktopSettingsLink, ChatSettingsControl } from "../.test-build/components/web/src/desktop-settings.js";
+
+test("render diagnostics are native-only bounded hints without exception messages", () => {
+  const calls = [];
+  const location = { assign: value => calls.push(value) };
+  reportDesktopRenderFailure("TypeError", "at App", true, { location });
+  assert.deepEqual(calls, []);
+  reportDesktopRenderFailure("TypeError", "x".repeat(3000), true, { spoolDesktop: true, location });
+  const url = new URL(calls[0], "https://loopback.test");
+  assert.equal(url.pathname, "/__desktop/render-error");
+  assert.equal(url.searchParams.get("name"), "TypeError");
+  assert.equal(url.searchParams.get("fatal"), "true");
+  assert.equal(url.searchParams.get("components").length, 2048);
+  reportDesktopRenderFailure("arbitrary message with spaces", "at Markdown", false, { spoolDesktop: true, location });
+  assert.equal(new URL(calls[1], "https://loopback.test").searchParams.get("name"), "Error");
+});
 
 test("desktop presentation requires the explicit preload flag, not a query or generic MyGo runtime", () => {
   assert.equal(isDesktopChat({ spoolDesktop: true }), true);

@@ -1449,5 +1449,7 @@
   "Each uploaded file must be at most 64 MB": "每个上传文件不能超过 64 MB",
   "Could not save uploaded file": "无法保存上传文件",
   "Upload one file per request": "每个请求只能上传一个文件",
-  "A file with this name already exists": "已存在同名文件"
+  "A file with this name already exists": "已存在同名文件",
+  "The page could not be displayed.": "页面暂时无法显示。",
+  "Try again to restore the workspace.": "请重试以恢复工作区。"
 }

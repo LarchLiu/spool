@@ -86,14 +86,22 @@ export function subscribeWorkspaceEvents(
     retry = watchdog = undefined;
   };
   const send = (type: string) => {
-    if (socket?.readyState === 1)
-      socket.send(
+    const current = socket;
+    if (current?.readyState !== 1) return;
+    try {
+      current.send(
         JSON.stringify({
           type,
           visible: transport.visible(),
           ...transport.view?.(),
         }),
       );
+    } catch {
+      // A connection can disappear between the readyState check and send.
+      // This also runs from React effects, where an escaped exception unmounts
+      // the workspace. Enter the ordinary reconnect path instead.
+      lost(current);
+    }
   };
   const lost = (current?: WebSocket) => {
     if (controller.signal.aborted || (current && socket !== current)) return;
@@ -133,20 +141,26 @@ export function subscribeWorkspaceEvents(
     armWatchdog(current);
     current.onopen = () => {
       if (socket !== current || controller.signal.aborted) return;
-      current.send(
-        JSON.stringify({
-          type: "hello",
-          csrf: transport.csrf(),
-          visible: transport.visible(),
-          ...transport.view?.(),
-        }),
-      );
+      try {
+        current.send(
+          JSON.stringify({
+            type: "hello",
+            csrf: transport.csrf(),
+            visible: transport.visible(),
+            ...transport.view?.(),
+          }),
+        );
+      } catch {
+        lost(current);
+      }
     };
     current.onmessage = (event) => {
       if (socket !== current || controller.signal.aborted) return;
       let message: { type: string; data: unknown };
       try {
         message = JSON.parse(event.data);
+        if (!message || typeof message.type !== "string")
+          throw new Error("invalid workspace event");
       } catch {
         lost(current);
         return;

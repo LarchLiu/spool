@@ -54,9 +54,16 @@ export async function api<T>(
     body:
       body === undefined ? undefined : multipart ? body : JSON.stringify(body),
   });
-  const data = await response.json().catch(() => ({
-    error: translator(language)("The server returned an invalid response"),
-  }));
+  const data = await response.json().catch(() => {
+    const message = translator(language)(
+      "The server returned an invalid response",
+    );
+    // A connection may fail after 200 headers arrive but before the JSON body
+    // finishes. Never pass a fabricated error object to success handlers
+    // that will treat it as a chat, transcript or navigation snapshot.
+    if (response.ok) throw new APIError(message, response.status);
+    return { error: message };
+  });
   if (!response.ok) {
     if (response.status === 401 && path !== "/login")
       window.dispatchEvent(new Event("auth-expired"));

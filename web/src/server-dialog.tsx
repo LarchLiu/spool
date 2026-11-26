@@ -1,5 +1,6 @@
 import { useEffect, useRef, useState, type KeyboardEvent } from "react";
 import { createRoot } from "react-dom/client";
+import { ApplicationBoundary } from "./application-boundary";
 import { Info, KeyRound, ScanQrCode, X } from "lucide-react";
 import { defaultPreferences } from "./preferences";
 import { usePresentation } from "./use-presentation";
@@ -690,4 +691,8 @@ export function ServerDialog() {
   );
 }
 
-createRoot(document.getElementById("root")!).render(<ServerDialog />);
+createRoot(document.getElementById("root")!).render(
+  <ApplicationBoundary>
+    <ServerDialog />
+  </ApplicationBoundary>,
+);
