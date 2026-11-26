@@ -42,6 +42,7 @@ import {
 import { SidebarSection } from "./sidebar-section";
 import { INITIAL_CHAT_LIMIT, SidebarChatList } from "./sidebar-chat-list";
 import { SessionNotificationIcon } from "./session-notification-icon";
+import { ProjectChatStatus } from "./project-chat-status";
 import type { SessionNotifications } from "./use-session-notifications";
 
 type Props = {
@@ -326,6 +327,12 @@ export function Sidebar(props: Props) {
                         )}
                         <span>{p.name}</span>
                       </button>
+                      <ProjectChatStatus
+                        collapsed={!isOpen}
+                        chats={list}
+                        notifications={props.notifications}
+                        t={t}
+                      />
                       <button
                         type="button"
                         className="project-new icon"

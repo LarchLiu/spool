@@ -47,20 +47,32 @@ const server = await createTestViteServer(
   },
 );
 const user = "user-12345678";
-const chats = ["current", "completed", "failed", "approval"].map(
-  (name, index) => ({
-    id: "chat-" + name + "-12345678",
-    title: name,
-    project_id: "project",
-    user_id: user,
-    backend: "codex",
-    status: "idle",
-    updated_at: 10 - index,
-    can_control: true,
-    turns: [],
-    transcript: { parts: [] },
-  }),
-);
+const chats = [
+  "current",
+  "completed",
+  "failed",
+  "approval",
+  "running",
+  "hidden-completed",
+].map((name, index) => ({
+  id: "chat-" + name + "-12345678",
+  title: name,
+  project_id: "project",
+  user_id: user,
+  backend: "codex",
+  status: name === "running" ? "running" : "idle",
+  updated_at: 10 - index,
+  can_control: true,
+  turns: [],
+  transcript: { parts: [] },
+}));
+const projects = [
+  {
+    id: "project",
+    name: "Project with a long name to check status icon spacing",
+  },
+  { id: "empty", name: "Empty project" },
+];
 let browser;
 try {
   await mkdir(output, { recursive: true });
@@ -186,7 +198,7 @@ try {
               });
             if (endpoint === "/api/navigation")
               return json({
-                projects: [{ id: "project", name: "Project" }],
+                projects,
                 chats,
               });
             if (endpoint === "/api/agents")
@@ -239,13 +251,11 @@ try {
             });
           });
           const row = (title) =>
-            page
-              .locator(".recents .nav-chat")
-              .filter({
-                has: page.locator(".nav-chat-title", {
-                  hasText: new RegExp(`^${title}$`),
-                }),
-              });
+            page.locator(".recents .nav-chat").filter({
+              has: page.locator(".nav-chat-title", {
+                hasText: new RegExp(`^${title}$`),
+              }),
+            });
           const expectStatus = async (title, kind) => {
             await page.waitForFunction(
               ({ title, kind }) => {
@@ -276,6 +286,52 @@ try {
                 window.fixtureNotify(chat, kind, owner, native),
               { chat, kind, owner, native },
             );
+          const project = page.locator(".project-group").filter({
+            has: page.locator(
+              '.project-toggle[aria-controls="project-chats-project"]',
+            ),
+          });
+          const toggleProject = project.locator(".project-toggle");
+          const summary = project.locator(".project-chat-status");
+          const expectProjectStatuses = async (kinds, running = true) => {
+            await page.waitForFunction(
+              ({ kinds, running }) => {
+                const row = document
+                  .querySelector(
+                    '.project-toggle[aria-controls="project-chats-project"]',
+                  )
+                  .closest(".project-row");
+                const statuses = [
+                  ...row.querySelectorAll(".session-notification-icon"),
+                ].map((icon) => icon.dataset.status);
+                return (
+                  JSON.stringify(statuses) === JSON.stringify(kinds) &&
+                  !!row.querySelector('[role="status"]') === running
+                );
+              },
+              { kinds, running },
+            );
+          };
+          assert.equal(
+            await toggleProject.getAttribute("aria-expanded"),
+            "true",
+          );
+          assert.equal(
+            await summary.count(),
+            0,
+            "Expanded projects leave status icons on their conversation rows",
+          );
+          await toggleProject.click();
+          await expectProjectStatuses([]);
+          assert.equal(await project.locator(".project-chats").count(), 0);
+          assert.equal(
+            await page
+              .locator('.project-toggle[aria-controls="project-chats-empty"]')
+              .locator("..")
+              .locator(".project-chat-status")
+              .count(),
+            0,
+          );
           const view = await page.evaluate(() =>
             window.fixtureSent.find((value) => value.type === "hello"),
           );
@@ -285,10 +341,39 @@ try {
             "remote pages report the viewed session through their own socket",
           );
           assert.equal(view.chat, chats[0].id);
-          for (const chat of chats.slice(1)) {
+          for (const chat of chats.slice(1, 4)) {
             await notify(chat.id, chat.title);
             await expectStatus(chat.title, chat.title);
           }
+          await notify(chats[5].id, "completed");
+          await expectProjectStatuses(["approval", "failed", "completed"]);
+          assert.equal(
+            await summary.getByRole("img").count(),
+            3,
+            "Repeated notification kinds only appear once, including off-page conversations",
+          );
+          const iconBounds = await summary.boundingBox();
+          const newChatBounds = await project
+            .locator(".project-new")
+            .boundingBox();
+          const toggleBounds = await toggleProject.boundingBox();
+          assert.ok(toggleBounds.x + toggleBounds.width <= iconBounds.x + 1);
+          assert.ok(
+            iconBounds.x + iconBounds.width <= newChatBounds.x + 1,
+            "Icons do not overlap the new-chat action",
+          );
+          await toggleProject.click();
+          assert.equal(
+            await summary.count(),
+            0,
+            "Expanding a project removes its summary",
+          );
+          assert.equal(
+            await project.getByRole("status", { name: "Working" }).count(),
+            1,
+          );
+          await toggleProject.click();
+          await expectProjectStatuses(["approval", "failed", "completed"]);
           await notify(chats[0].id, "completed");
           await expectStatus("current", "");
           await notify(chats[3].id, "failed", "another-user-12345678");
@@ -308,6 +393,23 @@ try {
             });
           await row("completed").locator(".nav-chat-open").click();
           await expectStatus("completed", "");
+          assert.equal(
+            await summary.count(),
+            0,
+            "Selecting a conversation reveals the project without duplicate summary icons",
+          );
+          await toggleProject.click();
+          await expectProjectStatuses(["approval", "failed", "completed"]);
+          await page
+            .locator(".recents")
+            .getByRole("button", { name: "Show more", exact: true })
+            .click();
+          await expectStatus("hidden-completed", "completed");
+          await row("hidden-completed").locator(".nav-chat-open").click();
+          await expectStatus("hidden-completed", "");
+          await toggleProject.click();
+          await expectProjectStatuses(["approval", "failed"]);
+          await row("completed").locator(".nav-chat-open").click();
           await page.waitForFunction(
             (id) =>
               window.fixtureSent.some(
@@ -372,6 +474,32 @@ try {
           }
           await expectStatus("failed", "failed");
           await expectStatus("approval", "approval");
+          await toggleProject.click();
+          await expectProjectStatuses(["approval", "failed"]);
+          await page.evaluate(
+            ({ projects, chats }) => {
+              window.fixtureSocket.onmessage({
+                data: JSON.stringify({
+                  type: "navigation",
+                  data: {
+                    projects,
+                    chats: chats.map((chat) =>
+                      chat.status === "running"
+                        ? { ...chat, status: "completed" }
+                        : chat,
+                    ),
+                  },
+                }),
+              });
+            },
+            { projects, chats },
+          );
+          await expectProjectStatuses(["approval", "failed"], false);
+          assert.equal(
+            await toggleProject.getAttribute("aria-expanded"),
+            "false",
+            "Live updates do not reopen a collapsed project",
+          );
           assert.deepEqual(errors, []);
           reports.push({
             engine,
@@ -379,6 +507,7 @@ try {
             threeStatuses: true,
             accountIsolation: true,
             readState: true,
+            collapsedProjectStatuses: true,
           });
           console.log(`${engine}/${mode}: session notifications passed`);
         } finally {

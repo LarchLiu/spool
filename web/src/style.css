@@ -363,6 +363,12 @@ button:disabled {
   white-space: nowrap;
   text-overflow: ellipsis;
 }
+.project-chat-status {
+  display: flex;
+  align-items: center;
+  flex-shrink: 0;
+  gap: 4px;
+}
 .project-new {
   opacity: 0;
   width: 27px;
