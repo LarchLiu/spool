@@ -34,7 +34,7 @@ const icons = {
   project_folder:'Folder', project_folder_open:'FolderOpen',
   people:'Users', user_plus:'UserPlus', attach:'Paperclip', settings:'Settings2', file_text:'FileText',
   file_code:'FileCode2', chevron_down:'ChevronDown', chevron_up:'ChevronUp',
-  chevron_left:'ChevronLeft', chevron_right:'ChevronRight', download:'Download', log_out:'LogOut', key_round:'KeyRound', scan_qr_code:'ScanQrCode',
+  chevron_left:'ChevronLeft', chevron_right:'ChevronRight', download:'Download', upload:'Upload', log_out:'LogOut', key_round:'KeyRound', scan_qr_code:'ScanQrCode',
   monitor:'Monitor', monitor_up:'MonitorUp', smartphone:'Smartphone', palette:'Palette', sun:'Sun', moon:'Moon', check:'Check', command:'Command',
   copy:'Copy', clipboard_paste:'ClipboardPaste', code_xml:'CodeXml', circle_alert:'CircleAlert', circle_check:'CircleCheck', circle_x:'CircleX', shield_check:'ShieldCheck', shield_question:'ShieldQuestion',
   message:'MessageCircle', search:'Search', refresh:'RefreshCw', repeat:'Repeat', spinner:'LoaderCircle', plug:'Plug',

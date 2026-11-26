@@ -49,6 +49,7 @@ final class NativeIcons {
             case "chevron_left": resource = R.drawable.web_icon_chevron_left; break;
             case "chevron_right": resource = R.drawable.web_icon_chevron_right; break;
             case "download": resource = R.drawable.web_icon_download; break;
+            case "upload": resource = R.drawable.web_icon_upload; break;
             case "log_out": resource = R.drawable.web_icon_log_out; break;
             case "key_round": resource = R.drawable.web_icon_key_round; break;
             case "scan_qr_code": resource = R.drawable.web_icon_scan_qr_code; break;

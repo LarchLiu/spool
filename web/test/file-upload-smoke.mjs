@@ -11,18 +11,19 @@ import { createTestViteServer } from "./vite-fixture.mjs";
 const scratch = requireRunTemp();
 const root = fileURLToPath(new URL("../", import.meta.url));
 const output = fileURLToPath(new URL("../../build/artifacts/file-upload/", import.meta.url));
-const { chromium } = createRequire(join(process.env.SPOOL_NODE_MODULES || join(root, "node_modules"), "__upload__.cjs"))("playwright");
+const { chromium, webkit } = createRequire(join(process.env.SPOOL_NODE_MODULES || join(root, "node_modules"), "__upload__.cjs"))("playwright");
 const cleanups = [];
 const source = `
 import React,{useState} from 'react'; import {createRoot} from 'react-dom/client';
 import {FileSidebar} from '/src/file-sidebar.tsx'; import {ProjectsPage} from '/src/settings-projects.tsx';
+import {ChatTitleMenu} from '/src/chat-title-menu.tsx';
 import {newProject} from '/src/settings-client.ts'; import {translator} from '/src/i18n.ts';
 import {setCSRF} from '/src/api.ts'; import '/src/style.css'; import '/src/settings.css';
 const params=new URL(location.href).searchParams; const t=translator('en'); setCSRF('upload-csrf');
 const main={path:'/repo/main',available:true,kind:'main',branch:'dev'};
 const tree={path:'/repo/feature',available:true,kind:'worktree',branch:'feature/upload'};
 function Files(){const [workspace,setWorkspace]=useState(main),[selection,setSelection]=useState(null);
-return <div className="app left-collapsed" style={{'--right-panel-width':'460px'}}><main className="workspace"/><FileSidebar
+return <div className="app left-collapsed" style={{'--right-panel-width':'460px'}}><main className="workspace"><ChatTitleMenu title="Reference chat" t={t} pinned={false} onTogglePin={()=>{}} onRename={async()=>{}} onArchive={async()=>{}} onDelete={async()=>{}} onError={()=>{}}/></main><FileSidebar
 project={{id:'project',name:'Project',can_upload:params.get('enabled')!=='false'}} chatID={params.has('project')?undefined:'chat'}
 workspace={params.has('project')?undefined:workspace} workspaces={[main,tree]} onSelectWorkspace={path=>{setWorkspace(path===tree.path?tree:main);setSelection(null)}} onRefreshWorkspace={()=>{}}
 active={true} mobileOpen={true} width={460} selection={selection} t={t} theme={params.get('theme')||'light'}
@@ -44,14 +45,17 @@ const plugin = {
   },
 };
 const server = await createTestViteServer({ after: callback => cleanups.push(callback) }, {
-  configFile: false, root, plugins: [react(), plugin], server: { host: "127.0.0.1", port: 0, strictPort: true },
+  configFile: false, root, plugins: [react(), plugin], server: { host: "127.0.0.1", port: 0 },
 });
 let browser;
 const reports = [];
 try {
   await server.listen();
   await mkdir(output, { recursive: true });
-  browser = await chromium.launchPersistentContext(join(scratch, "browser"), { channel: "chrome", headless: true, viewport: { width: 1280, height: 900 } });
+  for (const [engine, type, launch] of [["chromium", chromium, { channel: "chrome" }], ["webkit", webkit, { executablePath: process.env.WEBKIT_BIN }]]) for (const desktop of [false, true]) {
+  const surface = `${engine}-${desktop ? "desktop" : "web"}`;
+  browser = await type.launchPersistentContext(join(scratch, surface), { ...launch, headless: true, viewport: { width: 1280, height: 900 } });
+  await browser.addInitScript(desktop => { if (desktop) { window.spoolDesktop = true; window.mygo = { platform: "darwin" }; } }, desktop);
   const page = browser.pages()[0];
   const errors = [];
   page.on("pageerror", error => errors.push(error.stack || String(error)));
@@ -85,9 +89,18 @@ try {
     return json({ error: "Unexpected request" }, 404);
   });
   const row = path => page.locator(`[data-item-path="${path}"]`).first();
+  const menuAppearance = menu => menu.evaluate(panel => {
+    const row = panel.querySelector("button"), panelStyle = getComputedStyle(panel), rowStyle = getComputedStyle(row);
+    return { width: panel.getBoundingClientRect().width, padding: panelStyle.padding, radius: panelStyle.borderRadius,
+      shadow: panelStyle.boxShadow, background: panelStyle.backgroundColor, rowPadding: rowStyle.padding,
+      font: rowStyle.fontSize, gap: rowStyle.gap, icon: row.querySelector("svg").getBoundingClientRect().width };
+  });
   async function openMenu(target, position) {
     await target.click({ button: "right", ...(position ? { position } : {}) });
-    await page.getByRole("menu", { name: "Project file actions" }).waitFor();
+    const menu = page.getByRole("menu", { name: "Project file actions" });
+    await menu.waitFor();
+    assert.equal(await menu.getByRole("menuitem").count(), 1);
+    assert.equal(await menu.innerText(), "Upload files");
   }
   async function choose(files, expectError = false) {
     const picker = page.waitForEvent("filechooser");
@@ -96,10 +109,14 @@ try {
     await (expectError ? page.getByRole("alert") : page.getByRole("status").filter({ hasText: /Uploaded/ })).waitFor();
   }
   await page.goto(base + "files=1");
+  await page.getByRole("button", { name: "Chat options: Reference chat" }).click();
+  const sidebarAppearance = await menuAppearance(page.getByRole("menu", { name: "Chat options" }));
+  await page.keyboard.press("Escape");
   await row("docs/").waitFor();
   const folderBox = await row("docs/").boundingBox();
   await openMenu(row("docs/"), { x: folderBox.width - 20, y: folderBox.height / 2 });
-  assert.ok(await page.getByRole("menu").getByText("Upload to docs", { exact: true }).isVisible());
+  assert.deepEqual(await menuAppearance(page.getByRole("menu")), sidebarAppearance);
+  await page.getByRole("menu").screenshot({ path: join(output, `${surface}-menu.png`) });
   await choose(["one.txt", "中文 two.txt"]);
   await row("docs/one.txt").waitFor();
   await row("docs/中文 two.txt").waitFor();
@@ -107,35 +124,47 @@ try {
   assert.equal(await page.locator(".file-preview").count(), 0, "Right-click must not open the preview");
   const fileBox = await row("docs/nested.txt").boundingBox();
   await openMenu(row("docs/nested.txt"), { x: fileBox.width - 12, y: fileBox.height / 2 });
-  assert.ok(await page.getByRole("menu").getByText("Upload to docs", { exact: true }).isVisible());
-  await page.keyboard.press("Escape");
-  assert.equal(await page.getByRole("menu").count(), 0);
+  await page.keyboard.press("ArrowDown");
+  assert.ok(await page.getByRole("menuitem", { name: "Upload files" }).evaluate(item => item === document.activeElement));
+  await choose(["file-parent.txt"]);
+  assert.equal(uploads.at(-1).directory, "docs");
   await openMenu(row("empty/"));
   await choose(["empty-folder.txt"]);
   try {
     await row("empty/empty-folder.txt").waitFor({ timeout: 5000 });
   } catch (error) {
-    await page.screenshot({ path: join(output, "failure.png") });
+    await page.screenshot({ path: join(output, `${surface}-failure.png`) });
     console.log(JSON.stringify({ uploads, errors }));
     throw error;
   }
   const tree = page.locator(".file-tree-section");
   const treeBox = await tree.boundingBox();
   await openMenu(tree, { x: 100, y: treeBox.height - 4 });
-  assert.ok(await page.getByRole("menu").getByText("Upload to /", { exact: true }).isVisible());
   await choose(["root-upload.txt"]);
   await row("root-upload.txt").waitFor();
   assert.equal(uploads.at(-1).directory, ".");
   await openMenu(row("docs/"));
   await choose(["one.txt"], true);
   await page.getByRole("alert").filter({ hasText: "A file with this name already exists" }).waitFor();
-  await page.screenshot({ path: join(output, "context-and-conflict.png"), animations: "disabled" });
+  await page.screenshot({ path: join(output, `${surface}-context-and-conflict.png`), animations: "disabled" });
   await page.goto(base + "files=1&enabled=false");
   await openMenu(row("docs/"));
   assert.ok(await page.getByRole("menuitem", { name: "Upload files" }).isDisabled());
-  assert.ok(await page.getByText("File upload permission is disabled", { exact: true }).isVisible());
+  const disabled = page.getByRole("menuitem", { name: "Upload files" });
+  assert.ok(await disabled.evaluate(item => Number(getComputedStyle(item).opacity) < 1));
+  await disabled.hover();
+  assert.equal(await disabled.evaluate(item => getComputedStyle(item).backgroundColor), "rgba(0, 0, 0, 0)");
+  await page.getByRole("menu").screenshot({ path: join(output, `${surface}-disabled.png`) });
   await page.keyboard.press("Escape");
   assert.equal(await page.getByRole("menu").count(), 0);
+  await openMenu(row("docs/"));
+  await page.mouse.click(650, 600, { button: "right" });
+  assert.equal(await page.getByRole("menu").count(), 0, "Right-clicking the shared backdrop dismisses the menu");
+  await openMenu(row("docs/"));
+  const underlyingFile = await row("root.txt").boundingBox();
+  await page.mouse.click(underlyingFile.x + 40, underlyingFile.y + underlyingFile.height / 2);
+  assert.equal(await page.getByRole("menu").count(), 0);
+  assert.equal(await page.locator(".file-preview").count(), 0, "Dismissing the menu cannot open the underlying file");
   await page.goto(base + "files=1&theme=dark");
   await page.getByRole("button", { name: "Switch directory", exact: true }).click();
   await page.getByRole("option").filter({ hasText: "feature/upload" }).click();
@@ -143,7 +172,7 @@ try {
   await choose(["worktree.txt"]);
   assert.equal(uploads.at(-1).scope, "/repo/feature");
   assert.equal(uploads.at(-1).directory, "docs");
-  await page.screenshot({ path: join(output, "worktree-dark.png"), animations: "disabled" });
+  await page.screenshot({ path: join(output, `${surface}-worktree-dark.png`), animations: "disabled" });
   await page.goto(base + "project=1");
   await openMenu(row("docs/"));
   await choose(["project.txt"]);
@@ -166,9 +195,11 @@ try {
   await page.waitForFunction(() => window.commands.filter(command => command.kind === "save-project").length === 2);
   assert.equal(await page.evaluate(() => window.commands.at(-1).project.member_upload.alice), false);
   await permission.scrollIntoViewIfNeeded();
-  await page.screenshot({ path: join(output, "member-permission.png"), animations: "disabled" });
+  await page.screenshot({ path: join(output, `${surface}-member-permission.png`), animations: "disabled" });
   assert.deepEqual(errors, []);
-  reports.push({ uploads, memberPermissionSaved: true, errors });
+  reports.push({ surface, uploads, memberPermissionSaved: true, errors });
+  await browser.close(); browser = null;
+  }
   await writeFile(join(output, "report.json"), JSON.stringify(reports, null, 2) + "\n");
   console.log("File upload browser checks passed: folders, file whitespace, root whitespace, empty folders, batches, conflict, permission, worktree, project root, settings save.");
 } finally {

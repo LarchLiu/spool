@@ -124,17 +124,27 @@ public class NativeProjectUploadTest {
                     + "; position " + browser.list.pointToPosition((int) x, (int) y) + "; window focus " + browser.list.hasWindowFocus(), ui.activePopover);
             MotionEvent end = MotionEvent.obtain(down, SystemClock.uptimeMillis(), MotionEvent.ACTION_UP, x, y, 0); browser.list.dispatchTouchEvent(end); end.recycle(); idle();
         }
-        void destination(String expected) {
+        void menu() {
             assertNotNull(ui.activePopover); assertTrue(ui.activePopover.isShowing());
-            assertEquals("Upload to " + expected, ((TextView) ui.activePopover.content.getChildAt(0)).getText().toString());
+            assertEquals(1, ui.activePopover.content.getChildCount());
+            assertEquals("Upload files", ui.activePopover.content.getChildAt(0).getContentDescription());
+        }
+        void chooseMenu(String directory) {
+            provider(activity.get());
+            Uri uri = document(activity.get(), "menu", new ByteArrayInputStream(new byte[]{1}));
+            ui.activePopover.content.getChildAt(0).performClick();
+            var picker = Shadows.shadowOf(activity.get()).getNextStartedActivityForResult(); assertNotNull(picker);
+            upload.result(picker.requestCode, Activity.RESULT_OK, new Intent().setData(uri)); drain();
+            assertEquals(directory, Uri.parse(transport.paths.get(transport.paths.size() - 1)).getQueryParameter("path"));
         }
         @Override public void close() { upload.close(); browser.deactivate(); activity.close(); }
     }
 
     @Test public void realLongPressTargetsFoldersFileParentsAndBlankRootWithoutOpeningPreview() throws Exception {
-        try (Fixture f = new Fixture()) {
-            View folder = f.browser.list.getChildAt(0);
-            f.longPress(f.browser.list.getWidth() - 30, folder.getTop() + folder.getHeight() / 2f); f.destination("src");
+        for (int target = 0; target < 3; target++) try (Fixture f = new Fixture()) {
+            View row = f.browser.list.getChildAt(target == 1 ? 1 : 0);
+            View last = f.browser.list.getChildAt(f.browser.list.getChildCount() - 1);
+            f.longPress(f.browser.list.getWidth() - 30, target == 2 ? last.getBottom() + 50 : row.getTop() + row.getHeight() / 2f); f.menu();
             View panel = f.ui.activePopover.panel(); assertTrue(panel.getWidth() > 0); assertTrue(panel.getHeight() > 0);
             java.nio.file.Path artifacts = java.nio.file.Path.of(System.getProperty("spool.ui.artifacts"), "project-upload");
             java.nio.file.Files.createDirectories(artifacts);
@@ -144,28 +154,21 @@ public class NativeProjectUploadTest {
                 assertTrue(image.compress(android.graphics.Bitmap.CompressFormat.PNG, 100, output));
             } finally { image.recycle(); }
             assertTrue(f.state.expanded.contains("src")); assertNull(f.state.target);
-            f.ui.activePopover.dismiss();
-            View file = f.browser.list.getChildAt(1);
-            f.longPress(80, file.getTop() + file.getHeight() / 2f); f.destination("src"); assertNull(f.state.target);
-            f.ui.activePopover.dismiss();
-            View last = f.browser.list.getChildAt(f.browser.list.getChildCount() - 1);
-            f.longPress(100, last.getBottom() + 50); f.destination("/");
-            f.ui.activePopover.content.getChildAt(1).performClick(); assertTrue(f.upload.waiting());
-            assertNotNull(Shadows.shadowOf(f.activity.get()).getNextStartedActivityForResult());
+            f.chooseMenu(target == 2 ? "." : "src");
         }
     }
 
     @Test public void emptyDirectoryAndPermissionChangesKeepTheMenuUnavailableUntilAuthorized() {
         try (Fixture f = new Fixture()) {
-            f.allowed = false; f.browser.list.getOnItemLongClickListener().onItemLongClick(f.browser.list, f.browser.list.getChildAt(0), 0, 0); f.destination("src");
-            assertFalse(f.ui.activePopover.content.getChildAt(1).isEnabled());
-            assertEquals("File upload permission is disabled", ((TextView) f.ui.activePopover.content.getChildAt(2)).getText().toString());
+            f.allowed = false; f.browser.list.getOnItemLongClickListener().onItemLongClick(f.browser.list, f.browser.list.getChildAt(0), 0, 0); f.menu();
+            assertFalse(f.ui.activePopover.content.getChildAt(0).isEnabled());
+            assertEquals(.5f, f.ui.activePopover.content.getChildAt(0).getAlpha(), .01f);
             f.ui.activePopover.dismiss(); f.allowed = true;
             f.browser.list.getOnItemLongClickListener().onItemLongClick(f.browser.list, f.browser.list.getChildAt(0), 0, 0);
-            View upload = f.ui.activePopover.content.getChildAt(1); f.allowed = false; upload.performClick();
+            View upload = f.ui.activePopover.content.getChildAt(0); f.allowed = false; upload.performClick();
             assertFalse(f.upload.waiting()); assertNull(Shadows.shadowOf(f.activity.get()).getNextStartedActivityForResult());
             f.state.resetDirectories(); f.state.accept(".", json("{entries:[]}")); f.browser.renderTree(); layout(f.browser);
-            assertEquals(View.VISIBLE, f.browser.empty.getVisibility()); assertTrue(f.browser.empty.performLongClick()); f.destination("/");
+            assertEquals(View.VISIBLE, f.browser.empty.getVisibility()); assertTrue(f.browser.empty.performLongClick()); f.menu();
         }
     }
 

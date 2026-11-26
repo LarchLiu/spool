@@ -107,14 +107,17 @@ public class MainActivityChatManagementTest {
     private NativeChatMenu longPress(MainActivityGoalTest.Harness h, String prefix) throws Exception {
         int requests = MainActivityGoalTest.ShadowClient.calls.size();
         h.call("openSidebar");
-        // Opening the sidebar checks ADB availability independently of chat actions.
-        assertEquals("Only the sidebar availability check should be queued", 1, h.io.jobs.size());
-        MainActivityGoalTest.ShadowClient.response = envelope(200,
-                new JSONObject().put("available", false).put("reason", "disabled"));
-        h.io.run();
-        assertEquals(requests + 1, MainActivityGoalTest.ShadowClient.calls.size());
-        assertEquals(List.of("GET", "/api/adb", "", "test-csrf", "en"),
-                MainActivityGoalTest.ShadowClient.calls.get(requests));
+        // Android 11+ checks wireless ADB availability independently of chat actions.
+        boolean wirelessAdb = android.os.Build.VERSION.SDK_INT >= 30;
+        assertEquals("Only the supported sidebar availability check should be queued", wirelessAdb ? 1 : 0, h.io.jobs.size());
+        if (wirelessAdb) {
+            MainActivityGoalTest.ShadowClient.response = envelope(200,
+                    new JSONObject().put("available", false).put("reason", "disabled"));
+            h.io.run();
+            assertEquals(List.of("GET", "/api/adb", "", "test-csrf", "en"),
+                    MainActivityGoalTest.ShadowClient.calls.get(requests));
+        }
+        assertEquals(requests + (wirelessAdb ? 1 : 0), MainActivityGoalTest.ShadowClient.calls.size());
         assertTrue(h.io.jobs.isEmpty());
         Shadows.shadowOf(Looper.getMainLooper()).idleFor(java.time.Duration.ofMillis(250));
         View row = h.<NativeSidebar>get("sidebar").findViewWithTag(prefix + ":chat-two");
@@ -140,19 +143,22 @@ public class MainActivityChatManagementTest {
             assertFalse(menu.popup.content.getChildAt(2).isFocusable());
             assertEquals("Archive", menu.popup.content.getChildAt(3).getContentDescription());
             assertEquals("Delete", menu.popup.content.getChildAt(4).getContentDescription());
+            int requests = MainActivityGoalTest.ShadowClient.calls.size();
             menu.popup.content.getChildAt(1).performClick();
             assertTrue(h.<NativeSidebarState>get("sidebarState").pinned.contains("chat-two"));
             sidebarReply(h, new JSONObject().put("revision", 2).put("pinned", new JSONArray().put("chat-two")));
-            assertEquals("chat-two", new JSONObject(MainActivityGoalTest.ShadowClient.calls.get(1).get(2)).getString("chat_id"));
+            assertEquals(requests + 1, MainActivityGoalTest.ShadowClient.calls.size());
+            assertEquals("chat-two", new JSONObject(MainActivityGoalTest.ShadowClient.calls.get(requests).get(2)).getString("chat_id"));
             menu = longPress(h, "pinned");
+            requests = MainActivityGoalTest.ShadowClient.calls.size();
             assertEquals("Unpin chat", menu.popup.content.getChildAt(1).getContentDescription());
             menu.popup.content.getChildAt(0).performClick();
             assertEquals("Local conversation", menu.dialog.name.getText().toString());
             menu.dialog.name.setText("Renamed local conversation"); menu.dialog.submit.performClick();
             MainActivityGoalTest.ShadowClient.response = envelope(200, NativeChatState.copy(other).put("title", "Renamed local conversation"));
             h.io.run();
-            assertEquals(4, MainActivityGoalTest.ShadowClient.calls.size());
-            assertEquals("/api/chats/chat-two/rename", MainActivityGoalTest.ShadowClient.calls.get(3).get(1));
+            assertEquals(requests + 1, MainActivityGoalTest.ShadowClient.calls.size());
+            assertEquals("/api/chats/chat-two/rename", MainActivityGoalTest.ShadowClient.calls.get(requests).get(1));
             assertEquals("Renamed local conversation", h.<JSONArray>get("chats").getJSONObject(1).getString("title"));
             assertEquals("Original title", h.<NativeUi.Header>get("workspaceHeader").title.getText().toString());
             assertEquals("chat-one", h.<String>get("chatID"));
@@ -167,6 +173,7 @@ public class MainActivityChatManagementTest {
             h.<JSONArray>get("chats").put(h.chat("chat-two").put("title", "Other conversation").put("project_id", "project-one"));
             h.composer().input.setText("Keep this draft");
             NativeChatMenu menu = longPress(h, "project");
+            int requests = MainActivityGoalTest.ShadowClient.calls.size();
             menu.popup.content.getChildAt(action.equals("archive") ? 3 : 4).performClick();
             if (action.equals("delete")) {
                 assertTrue("Deletion still needs confirmation", h.io.jobs.isEmpty());
@@ -174,8 +181,8 @@ public class MainActivityChatManagementTest {
             }
             MainActivityGoalTest.ShadowClient.response = envelope(200, navigation(h, new JSONArray().put(current)));
             h.io.run();
-            assertEquals(2, MainActivityGoalTest.ShadowClient.calls.size());
-            assertEquals("/api/chats/chat-two/" + action, MainActivityGoalTest.ShadowClient.calls.get(1).get(1));
+            assertEquals(requests + 1, MainActivityGoalTest.ShadowClient.calls.size());
+            assertEquals("/api/chats/chat-two/" + action, MainActivityGoalTest.ShadowClient.calls.get(requests).get(1));
             assertEquals("chat-one", h.<String>get("chatID"));
             assertEquals(1, h.<JSONArray>get("chats").length());
             assertEquals("Keep this draft", h.composer().input.getText().toString());

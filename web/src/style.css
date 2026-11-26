@@ -773,7 +773,7 @@ button:disabled {
   text-align: left;
   font-size: 12px;
 }
-.chat-title-menu > button:hover,
+.chat-title-menu > button:hover:not(:disabled),
 .chat-title-menu > button:focus-visible {
   background: var(--hover);
 }
@@ -4698,13 +4698,6 @@ option {
   flex: 1;
   min-height: 0;
   overflow: hidden;
-}
-.file-upload-menu small {
-  display: block;
-  max-width: 280px;
-  padding: 6px 10px;
-  color: var(--muted);
-  overflow-wrap: anywhere;
 }
 .file-upload-status {
   position: absolute;

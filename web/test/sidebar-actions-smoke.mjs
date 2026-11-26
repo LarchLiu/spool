@@ -49,6 +49,7 @@ try {
         await page.route("**/api/**", async route => {
           const request = route.request(), endpoint = new URL(request.url()).pathname;
           const json = (value, status = 200) => route.fulfill({ status, contentType: "application/json", body: JSON.stringify(value) });
+          if (endpoint === "/api/federation/agents") return json([]);
           if (request.method() === "POST") writes.push({ endpoint, body: request.postDataJSON() });
           if (endpoint === "/api/me") return json({ user: { id: "owner", nickname: "Owner" }, csrf: "fixture" });
           if (endpoint === "/api/version") return json({ version: "fixture" });

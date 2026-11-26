@@ -11,6 +11,7 @@ import android.widget.TextView;
 
 /** Reusable anchored, scrollable Web-style menu with keyboard/outside dismissal. */
 final class NativePopover {
+    static NativePopover actions(NativeUi ui) { return new NativePopover(ui, 200, 8, 5, 16); }
     static NativePopover model(NativeUi ui) { return new NativePopover(ui, 290, 17, 1, 46); }
     // Content padding includes the Web border, which NativeSurface paints inside its bounds.
     static NativePopover permission(NativeUi ui) {
@@ -147,6 +148,20 @@ final class NativePopover {
 
     LinearLayout selectOption(String title, boolean selected, Runnable click) {
         return selectOption(title, "", selected, click);
+    }
+
+    LinearLayout actionOption(String title, String icon, boolean danger, boolean enabled, Runnable click) {
+        LinearLayout row = selectOption(title, icon, 16, 10, danger ? ui.error : 0, () -> {
+            dismiss(); click.run();
+        });
+        row.setMinimumHeight(ui.dp(48)); row.setEnabled(enabled); row.setAlpha(enabled ? 1f : .5f);
+        return row;
+    }
+
+    void showActions(View anchor) {
+        int initial = -1;
+        for (int i = 0; i < content.getChildCount(); i++) if (content.getChildAt(i).isEnabled() && content.getChildAt(i).isFocusable()) { initial = i; break; }
+        showSelect(anchor, initial, 180, 48);
     }
 
     /** Adds an option led by an icon; a non-zero color replaces the default label and icon colors. */

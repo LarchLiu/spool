@@ -29,7 +29,7 @@ final class NativeChatMenu {
 
     NativeChatMenu(NativeUi ui, String title, Actions actions, Consumer<Exception> failed) {
         this.ui = ui; this.title = title; this.actions = actions; this.failed = failed;
-        popup = new NativePopover(ui, 200, 8, 5, 16);
+        popup = NativePopover.actions(ui);
         if (actions.canManage()) option("Rename", "pencil", false, this::rename);
         option(actions.pinned() ? "Unpin chat" : "Pin chat", actions.pinned() ? "pin-off" : "pin", false, actions::togglePin);
         if (actions.canManage()) {
@@ -44,11 +44,10 @@ final class NativeChatMenu {
     }
 
     private void option(String text, String icon, boolean danger, Runnable click) {
-        popup.selectOption(ui.t(text), icon, 16, 10, danger ? ui.error : 0, () -> { popup.dismiss(); click.run(); })
-                .setMinimumHeight(ui.dp(48));
+        popup.actionOption(ui.t(text), icon, danger, true, click);
     }
 
-    void show(View anchor) { popup.showSelect(anchor, 0, 180, 48); }
+    void show(View anchor) { popup.showActions(anchor); }
 
     private void rename() {
         dialog = new ChatDialog(false);

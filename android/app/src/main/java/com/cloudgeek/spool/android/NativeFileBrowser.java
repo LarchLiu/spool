@@ -321,22 +321,15 @@ final class NativeFileBrowser extends LinearLayout {
         dismissUploadMenu();
         String target = NativeFileModel.key(directory);
         int scope = state.scope;
-        NativePopover menu = new NativePopover(ui, 280, 8, 5, 16);
+        NativePopover menu = NativePopover.actions(ui);
         uploadMenu = menu;
-        TextView destination = ui.text(ui.t("Upload to {path}", "path", target.equals(".") ? "/" : target), 12, ui.muted);
-        destination.setPadding(ui.dp(8), ui.dp(8), ui.dp(8), ui.dp(8));
-        menu.content.setContentDescription(ui.t("Project file actions")); menu.content.addView(destination);
+        menu.content.setContentDescription(ui.t("Project file actions"));
         boolean allowed = canUpload.getAsBoolean(); uploadMenuAllowed = allowed;
-        LinearLayout item = menu.selectOption(ui.t("Upload files"), "arrow-up", 16, 8, ui.text, () -> {
+        menu.actionOption(ui.t("Upload files"), "upload", false, allowed && !uploadBusy, () -> {
             dismissUploadMenu();
             if (active && scope == state.scope && !uploadBusy && canUpload.getAsBoolean()) upload.accept(target);
         });
-        item.setMinimumHeight(ui.dp(48)); item.setEnabled(allowed && !uploadBusy); item.setAlpha(item.isEnabled() ? 1f : .5f);
-        if (!allowed) {
-            TextView reason = ui.text(ui.t("File upload permission is disabled"), 12, ui.muted);
-            reason.setPadding(ui.dp(8), ui.dp(4), ui.dp(8), ui.dp(8)); menu.content.addView(reason);
-        }
-        menu.showSelect(anchor, -1, 220, 48);
+        menu.showActions(anchor);
         return true;
     }
     void uploadPermissionsChanged() { if (uploadMenu != null && uploadMenuAllowed != canUpload.getAsBoolean()) dismissUploadMenu(); }

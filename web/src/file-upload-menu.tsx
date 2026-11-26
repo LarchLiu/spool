@@ -1,12 +1,6 @@
-import {
-  useEffect,
-  useLayoutEffect,
-  useRef,
-  useState,
-  type ReactNode,
-} from "react";
-import { createPortal } from "react-dom";
+import { useEffect, useRef, useState, type ReactNode } from "react";
 import { LoaderCircle, Upload, X } from "lucide-react";
+import { ActionMenu } from "./action-menu";
 import { api } from "./api";
 import type { Translator } from "./i18n";
 import type { ProjectFileEntry } from "./types";
@@ -49,12 +43,10 @@ export function FileUploadMenu({
     top: number;
     directory: string;
   } | null>(null);
-  const [position, setPosition] = useState<{ left: number; top: number }>();
   const [uploading, setUploading] = useState(false);
   const [status, setStatus] = useState("");
   const [error, setError] = useState("");
   const picker = useRef<HTMLInputElement>(null);
-  const menuRef = useRef<HTMLDivElement>(null);
   const section = useRef<HTMLDivElement>(null);
   const destination = useRef(".");
   const controller = useRef<AbortController | null>(null);
@@ -70,37 +62,6 @@ export function FileUploadMenu({
   useEffect(() => {
     if (!active || !ready) setMenu(null);
   }, [active, ready]);
-  useLayoutEffect(() => {
-    if (!menu || !menuRef.current) return;
-    const rect = menuRef.current.getBoundingClientRect();
-    setPosition({
-      left: Math.max(8, Math.min(menu.left, innerWidth - rect.width - 8)),
-      top: Math.max(8, Math.min(menu.top, innerHeight - rect.height - 8)),
-    });
-    menuRef.current.focus();
-    menuRef.current
-      .querySelector<HTMLButtonElement>("button:not(:disabled)")
-      ?.focus();
-  }, [menu]);
-  useEffect(() => {
-    if (!menu) return;
-    const dismiss = () => setMenu(null);
-    const escape = (event: KeyboardEvent) => {
-      if (event.key === "Escape" && !event.isComposing) {
-        event.preventDefault();
-        event.stopPropagation();
-        close(true);
-      }
-    };
-    window.addEventListener("resize", dismiss);
-    document.addEventListener("scroll", dismiss, true);
-    document.addEventListener("keydown", escape, true);
-    return () => {
-      window.removeEventListener("resize", dismiss);
-      document.removeEventListener("scroll", dismiss, true);
-      document.removeEventListener("keydown", escape, true);
-    };
-  }, [menu]);
 
   async function upload(files: File[]) {
     if (!files.length || controller.current || !enabled || !ready) return;
@@ -155,6 +116,8 @@ export function FileUploadMenu({
       tabIndex={-1}
       onContextMenuCapture={(event) => {
         if (!active || !ready) return;
+        // Portal events bubble through React's tree, including the menu backdrop.
+        if (!event.currentTarget.contains(event.target as Node)) return;
         event.preventDefault();
         event.stopPropagation();
         origin.current =
@@ -165,7 +128,6 @@ export function FileUploadMenu({
                 item instanceof HTMLElement &&
                 item.hasAttribute("data-item-path"),
             ) as HTMLElement | undefined) ?? null;
-        setPosition(undefined);
         setMenu({
           left: event.clientX,
           top: event.clientY,
@@ -210,68 +172,28 @@ export function FileUploadMenu({
           )}
         </div>
       )}
-      {menu &&
-        createPortal(
-          <>
-            <div
-              className="chat-menu-backdrop"
-              aria-hidden="true"
-              onPointerDown={(event) => {
-                event.preventDefault();
-                close();
-              }}
-              onContextMenu={(event) => {
-                event.preventDefault();
-                close();
-              }}
-            />
-            <div
-              ref={menuRef}
-              role="menu"
-              tabIndex={-1}
-              aria-label={t("Project file actions")}
-              className="chat-title-menu file-upload-menu"
-              style={{
-                ...position,
-                visibility: position ? "visible" : "hidden",
-              }}
-              onKeyDown={(event) => {
-                if (event.key === "Tab") close(true);
-                if (
-                  ["ArrowDown", "ArrowUp", "Home", "End"].includes(event.key)
-                ) {
-                  event.preventDefault();
-                  menuRef.current
-                    ?.querySelector<HTMLButtonElement>("button:not(:disabled)")
-                    ?.focus();
-                }
-              }}
-            >
-              <small>
-                {t("Upload to {path}", {
-                  path: menu.directory === "." ? "/" : menu.directory,
-                })}
-              </small>
-              <button
-                type="button"
-                role="menuitem"
-                disabled={!enabled || uploading}
-                onClick={() => {
-                  destination.current = menu.directory;
-                  close();
-                  picker.current?.click();
-                }}
-              >
-                <Upload size={14} />
-                {t("Upload files")}
-              </button>
-              {!enabled && (
-                <small>{t("File upload permission is disabled")}</small>
-              )}
-            </div>
-          </>,
-          document.body,
-        )}
+      {menu && (
+        <ActionMenu
+          label={t("Project file actions")}
+          anchor={origin}
+          point={menu}
+          onClose={close}
+        >
+          <button
+            type="button"
+            role="menuitem"
+            disabled={!enabled || uploading}
+            onClick={() => {
+              destination.current = menu.directory;
+              close();
+              picker.current?.click();
+            }}
+          >
+            <Upload size={15} aria-hidden="true" />
+            {t("Upload files")}
+          </button>
+        </ActionMenu>
+      )}
     </div>
   );
 }

@@ -189,6 +189,7 @@ final class NativeText {
             case "Download {name}": value = "下载 {name}"; break;
             case "Downloading update: {percent}%": value = "正在下载更新：{percent}%"; break;
             case "Drag to reorder": value = "拖动调整顺序"; break;
+            case "Each uploaded file must be at most 64 MB": value = "每个上传文件不能超过 64 MB"; break;
             case "Edit files": value = "编辑文件"; break;
             case "Edit message": value = "编辑消息"; break;
             case "Edit prompt": value = "修改提示词"; break;
@@ -215,6 +216,7 @@ final class NativeText {
             case "File contents are not included in this patch.": value = "此补丁未包含文件正文。"; break;
             case "File not found": value = "文件不存在"; break;
             case "File preview": value = "文件预览"; break;
+            case "File upload permission is disabled": value = "未开启文件上传权限"; break;
             case "Files": value = "文件"; break;
             case "Fit diagram": value = "适应窗口"; break;
             case "Fit width": value = "适合宽度"; break;
@@ -235,6 +237,7 @@ final class NativeText {
             case "Group name": value = "群聊名称"; break;
             case "Group operation status unknown. Check your conversation list before trying again.": value = "群聊操作结果未知，请先检查聊天列表，避免重复操作。"; break;
             case "High": value = "高"; break;
+            case "Historical remote call. Open the original server to refresh or continue.": value = "这是历史调用记录。请打开原服务器刷新状态或继续对话。"; break;
             case "History": value = "历史"; break;
             case "Ideas, brought to life.": value = "想法，在这里落地。"; break;
             case "Image access denied": value = "无权读取此图片"; break;
@@ -243,7 +246,9 @@ final class NativeText {
             case "Information": value = "信息"; break;
             case "Install plugin": value = "安装插件"; break;
             case "Install update": value = "安装更新"; break;
+            case "Invalid file upload": value = "无效的文件上传"; break;
             case "Invalid history cursor": value = "历史分页位置无效"; break;
+            case "Invalid upload filename": value = "上传文件名无效"; break;
             case "Invite people": value = "邀请成员"; break;
             case "Keep current mode": value = "保持当前模式"; break;
             case "Keep current model": value = "保持当前模型"; break;
@@ -363,6 +368,7 @@ final class NativeText {
             case "Private message": value = "私聊消息"; break;
             case "Private messages": value = "私聊"; break;
             case "Project": value = "项目"; break;
+            case "Project file actions": value = "项目文件操作"; break;
             case "Project file tree": value = "项目文件树"; break;
             case "Project files": value = "项目文件"; break;
             case "Project panel": value = "项目"; break;
@@ -552,6 +558,9 @@ final class NativeText {
             case "Update v{version}": value = "更新 v{version}"; break;
             case "Updates automatically when your name changes": value = "名字变更后，头像会自动更新"; break;
             case "Updating presence…": value = "正在更新在线状态…"; break;
+            case "Upload files": value = "上传文件"; break;
+            case "Uploaded {count} files to {path}": value = "已上传 {count} 个文件到 {path}"; break;
+            case "Uploading {name}…": value = "正在上传 {name}…"; break;
             case "Use automatic mode by default": value = "默认使用自动模式"; break;
             case "Use my name": value = "根据名字自动生成"; break;
             case "Use result as context": value = "将结果用作上下文"; break;
@@ -791,6 +800,7 @@ final class NativeText {
             case "Download {name}": value = "{name}をダウンロード"; break;
             case "Downloading update: {percent}%": value = "更新をダウンロード中：{percent}%"; break;
             case "Drag to reorder": value = "ドラッグして並べ替え"; break;
+            case "Each uploaded file must be at most 64 MB": value = "各アップロードファイルは 64 MB 以下にしてください"; break;
             case "Edit files": value = "ファイルを編集"; break;
             case "Edit message": value = "メッセージを編集"; break;
             case "Edit prompt": value = "プロンプトを編集"; break;
@@ -817,6 +827,7 @@ final class NativeText {
             case "File contents are not included in this patch.": value = "このパッチにはファイルの内容が含まれていません。"; break;
             case "File not found": value = "ファイルが見つかりません"; break;
             case "File preview": value = "ファイルプレビュー"; break;
+            case "File upload permission is disabled": value = "ファイルのアップロード権限が無効です"; break;
             case "Files": value = "ファイル"; break;
             case "Fit diagram": value = "図を全体表示"; break;
             case "Fit width": value = "幅に合わせる"; break;
@@ -837,6 +848,7 @@ final class NativeText {
             case "Group name": value = "グループ名"; break;
             case "Group operation status unknown. Check your conversation list before trying again.": value = "グループ操作の結果が不明です。再試行する前にチャット一覧を確認してください。"; break;
             case "High": value = "高"; break;
+            case "Historical remote call. Open the original server to refresh or continue.": value = "過去の呼び出し記録です。状態の更新や会話の続行には元のサーバーを開いてください。"; break;
             case "History": value = "履歴"; break;
             case "Ideas, brought to life.": value = "アイデアを、かたちに。"; break;
             case "Image access denied": value = "この画像へのアクセスが拒否されました"; break;
@@ -845,7 +857,9 @@ final class NativeText {
             case "Information": value = "情報"; break;
             case "Install plugin": value = "プラグインをインストール"; break;
             case "Install update": value = "更新をインストール"; break;
+            case "Invalid file upload": value = "無効なファイルアップロードです"; break;
             case "Invalid history cursor": value = "履歴のページ位置が無効です"; break;
+            case "Invalid upload filename": value = "アップロードするファイル名が無効です"; break;
             case "Invite people": value = "メンバーを招待"; break;
             case "Keep current mode": value = "現在のモードを維持"; break;
             case "Keep current model": value = "現在のモデルを維持"; break;
@@ -965,6 +979,7 @@ final class NativeText {
             case "Private message": value = "プライベートメッセージを入力"; break;
             case "Private messages": value = "プライベートメッセージ"; break;
             case "Project": value = "プロジェクト"; break;
+            case "Project file actions": value = "プロジェクトファイル操作"; break;
             case "Project file tree": value = "プロジェクトのファイルツリー"; break;
             case "Project files": value = "プロジェクトファイル"; break;
             case "Project panel": value = "プロジェクト"; break;
@@ -1154,6 +1169,9 @@ final class NativeText {
             case "Update v{version}": value = "更新 v{version}"; break;
             case "Updates automatically when your name changes": value = "名前の変更に合わせて自動更新"; break;
             case "Updating presence…": value = "オンライン状態を更新中…"; break;
+            case "Upload files": value = "ファイルをアップロード"; break;
+            case "Uploaded {count} files to {path}": value = "{count} 個のファイルを {path} にアップロードしました"; break;
+            case "Uploading {name}…": value = "{name} をアップロード中…"; break;
             case "Use automatic mode by default": value = "既定で自動モードを使用"; break;
             case "Use my name": value = "名前から自動生成"; break;
             case "Use result as context": value = "結果をコンテキストに使用"; break;

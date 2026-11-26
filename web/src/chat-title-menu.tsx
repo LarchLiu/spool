@@ -1,4 +1,4 @@
-import { useEffect, useId, useLayoutEffect, useRef, useState } from "react";
+import { useEffect, useId, useRef, useState } from "react";
 import type { ReactNode, RefObject } from "react";
 import { createPortal } from "react-dom";
 import {
@@ -11,6 +11,7 @@ import {
   X,
 } from "lucide-react";
 import type { Translator } from "./i18n";
+import { ActionMenu } from "./action-menu";
 import { useChatTitleTooltip } from "./chat-title-tooltip";
 
 type ChatActionProps = {
@@ -82,7 +83,6 @@ export function ChatActionMenu({
 }) {
   const id = useId();
   const trigger = useRef<HTMLButtonElement>(null);
-  const menu = useRef<HTMLDivElement>(null);
   const [open, setOpen] = useState(false);
   const [renaming, setRenaming] = useState(false);
   const [deleting, setDeleting] = useState(false);
@@ -95,11 +95,9 @@ export function ChatActionMenu({
   );
   const archivePending = useRef(false);
   const [point, setPoint] = useState<{ left?: number; top?: number }>({});
-  const [position, setPosition] = useState<{ left: number; top: number }>();
   function show(origin?: { left: number; top: number }) {
     if (archivePending.current) return;
     setPoint(origin ?? {});
-    setPosition(undefined);
     setOpen(true);
   }
   function close(restoreFocus = false) {
@@ -121,46 +119,6 @@ export function ChatActionMenu({
       setArchiving(false);
     }
   }
-  useLayoutEffect(() => {
-    if (!open || !trigger.current || !menu.current) return;
-    const anchor = trigger.current.getBoundingClientRect();
-    const panel = menu.current.getBoundingClientRect();
-    setPosition({
-      left: Math.max(
-        8,
-        Math.min(point?.left ?? anchor.left, innerWidth - panel.width - 8),
-      ),
-      top: Math.max(
-        8,
-        Math.min(
-          point?.top ?? anchor.bottom + 6,
-          innerHeight - panel.height - 8,
-        ),
-      ),
-    });
-  }, [open, point]);
-  useLayoutEffect(() => {
-    if (open && position)
-      menu.current?.querySelector<HTMLButtonElement>("button")?.focus();
-  }, [open, position]);
-  useEffect(() => {
-    if (!open) return;
-    const escape = (event: KeyboardEvent) => {
-      if (event.isComposing || event.key !== "Escape") return;
-      event.preventDefault();
-      event.stopPropagation();
-      close(true);
-    };
-    const reposition = () => close();
-    document.addEventListener("keydown", escape, true);
-    window.addEventListener("resize", reposition);
-    document.addEventListener("scroll", reposition, true);
-    return () => {
-      document.removeEventListener("keydown", escape, true);
-      window.removeEventListener("resize", reposition);
-      document.removeEventListener("scroll", reposition, true);
-    };
-  }, [open]);
   return (
     <>
       {children({
@@ -174,147 +132,76 @@ export function ChatActionMenu({
         tooltipProps,
       })}
       {tooltip}
-      {open &&
-        createPortal(
-          <>
-            <div
-              className="chat-menu-backdrop"
-              aria-hidden="true"
-              onPointerDown={(event) => {
-                event.preventDefault();
-                event.stopPropagation();
-              }}
-              onClick={(event) => {
-                event.preventDefault();
-                event.stopPropagation();
+      {open && (
+        <ActionMenu
+          id={id}
+          label={t("Chat options")}
+          anchor={trigger}
+          point={point}
+          onClose={close}
+        >
+          {canManage && (
+            <button
+              type="button"
+              role="menuitem"
+              disabled={archiving}
+              onClick={() => {
                 close();
-              }}
-              onTouchEnd={(event) => {
-                // WebKit can suppress click after a canceled pointerdown.
-                // Cancel the compatibility click before removing its target.
-                event.preventDefault();
-                event.stopPropagation();
-                close();
-              }}
-              onContextMenu={(event) => {
-                event.preventDefault();
-                event.stopPropagation();
-                close();
-              }}
-            />
-            <div
-              id={id}
-              ref={menu}
-              className="chat-title-menu"
-              role="menu"
-              aria-label={t("Chat options")}
-              style={{
-                ...position,
-                visibility: position ? "visible" : "hidden",
-              }}
-              onBlur={(event) => {
-                // WebKit blurs buttons without a new focus target on mouse down,
-                // before their click handler can open the rename dialog.
-                if (
-                  event.relatedTarget &&
-                  !event.currentTarget.contains(event.relatedTarget as Node)
-                )
-                  close();
-              }}
-              onKeyDown={(event) => {
-                if (event.key === "Tab") {
-                  close(true);
-                  return;
-                }
-                if (
-                  ["ArrowDown", "ArrowUp", "Home", "End"].includes(event.key)
-                ) {
-                  event.preventDefault();
-                  const items = Array.from(
-                    menu.current?.querySelectorAll<HTMLButtonElement>(
-                      "button:not(:disabled)",
-                    ) || [],
-                  );
-                  const current = items.findIndex(
-                    (item) => item === document.activeElement,
-                  );
-                  const index =
-                    event.key === "Home"
-                      ? 0
-                      : event.key === "End"
-                        ? items.length - 1
-                        : (current +
-                            (event.key === "ArrowDown" ? 1 : -1) +
-                            items.length) %
-                          items.length;
-                  items[index]?.focus();
-                }
+                setRenaming(true);
               }}
             >
-              {canManage && (
-                <button
-                  type="button"
-                  role="menuitem"
-                  disabled={archiving}
-                  onClick={() => {
-                    close();
-                    setRenaming(true);
-                  }}
-                >
-                  <Pencil size={15} aria-hidden="true" />
-                  {t("Rename")}
-                </button>
-              )}
-              <button
-                type="button"
-                role="menuitem"
-                disabled={archiving}
-                onClick={(event) => {
-                  onTogglePin();
-                  close(event.detail === 0);
-                }}
-              >
-                {pinned ? (
-                  <PinOff size={15} aria-hidden="true" />
-                ) : (
-                  <Pin size={15} aria-hidden="true" />
-                )}
-                {t(pinned ? "Unpin chat" : "Pin chat")}
-              </button>
-              {canManage && (
-                <div className="chat-title-menu-separator" role="separator" />
-              )}
-              {canManage && (
-                <button
-                  type="button"
-                  role="menuitem"
-                  disabled={archiving}
-                  aria-busy={archiving}
-                  onClick={archive}
-                >
-                  <Archive size={15} aria-hidden="true" />
-                  {t(archiving ? "Archiving…" : "Archive")}
-                </button>
-              )}
-              {canManage && (
-                <button
-                  type="button"
-                  role="menuitem"
-                  className="destructive"
-                  disabled={archiving}
-                  onClick={() => {
-                    close();
-                    setDeleting(true);
-                  }}
-                >
-                  <Trash2 size={15} aria-hidden="true" />
-                  {t("Delete")}
-                </button>
-              )}
-            </div>
-          </>,
-          document.body,
-        )}
+              <Pencil size={15} aria-hidden="true" />
+              {t("Rename")}
+            </button>
+          )}
+          <button
+            type="button"
+            role="menuitem"
+            disabled={archiving}
+            onClick={(event) => {
+              onTogglePin();
+              close(event.detail === 0);
+            }}
+          >
+            {pinned ? (
+              <PinOff size={15} aria-hidden="true" />
+            ) : (
+              <Pin size={15} aria-hidden="true" />
+            )}
+            {t(pinned ? "Unpin chat" : "Pin chat")}
+          </button>
+          {canManage && (
+            <div className="chat-title-menu-separator" role="separator" />
+          )}
+          {canManage && (
+            <button
+              type="button"
+              role="menuitem"
+              disabled={archiving}
+              aria-busy={archiving}
+              onClick={archive}
+            >
+              <Archive size={15} aria-hidden="true" />
+              {t(archiving ? "Archiving…" : "Archive")}
+            </button>
+          )}
+          {canManage && (
+            <button
+              type="button"
+              role="menuitem"
+              className="destructive"
+              disabled={archiving}
+              onClick={() => {
+                close();
+                setDeleting(true);
+              }}
+            >
+              <Trash2 size={15} aria-hidden="true" />
+              {t("Delete")}
+            </button>
+          )}
+        </ActionMenu>
+      )}
       {deleting &&
         createPortal(
           <DeleteChatDialog
