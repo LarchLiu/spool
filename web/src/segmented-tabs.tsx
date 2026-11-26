@@ -212,7 +212,9 @@ export function SegmentedTabs<T extends string>({
         onWheel={stopScroll}
         onPointerDown={(event) => {
           suppressClick.current = false;
-          if (event.pointerType !== "mouse") stopScroll();
+          // Keep the pressed tab under the pointer through mouseup, including
+          // clicks and the movement before a drag reaches its threshold.
+          stopScroll();
           if (
             event.pointerType !== "mouse" ||
             event.button !== 0 ||
