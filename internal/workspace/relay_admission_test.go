@@ -17,7 +17,7 @@ func TestRelayDeviceRevocationRotatesAdmissionToken(t *testing.T) {
 	_, public, registration := relayWebBroker(t)
 	defer public.Close()
 	defer service.Stop()
-	settings.RelayURL, settings.RelayLANPort = public.URL, availableServicePort(t)
+	settings.RelayURL, settings.RelayLANPort = public.URL, reserveRelayPort(t, service)
 	if err := service.SaveSettings(settings); err != nil {
 		t.Fatal(err)
 	}

@@ -28,7 +28,7 @@ func TestRelayRejectedAuthorizationDisablesOnlyRelay(t *testing.T) {
 				t.Fatal(err)
 			}
 			t.Cleanup(public.Close)
-			settings.RelayURL, settings.RelayLANPort = public.URL, availableServicePort(t)
+			settings.RelayURL, settings.RelayLANPort = public.URL, reserveRelayPort(t, service)
 			settings.RelayWebEnabled = true
 			if err := service.SaveSettings(settings); err != nil {
 				t.Fatal(err)
@@ -108,7 +108,7 @@ func TestRelayTemporaryFailurePreservesEnabledRegistration(t *testing.T) {
 		broker.ServeHTTP(w, r)
 	}))
 	t.Cleanup(public.Close)
-	settings.RelayURL, settings.RelayLANPort = public.URL, availableServicePort(t)
+	settings.RelayURL, settings.RelayLANPort = public.URL, reserveRelayPort(t, service)
 	if err := service.SaveSettings(settings); err != nil {
 		t.Fatal(err)
 	}

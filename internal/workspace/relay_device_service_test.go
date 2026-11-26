@@ -24,7 +24,7 @@ func TestRelayDeviceAdmissionFollowsAppliedSettings(t *testing.T) {
 	_, public, token := relayWebBroker(t)
 	defer public.Close()
 	defer service.Stop()
-	settings.RelayURL, settings.RelayLANPort = public.URL, availableServicePort(t)
+	settings.RelayURL, settings.RelayLANPort = public.URL, reserveRelayPort(t, service)
 	if err := service.SaveSettings(settings); err != nil {
 		t.Fatal(err)
 	}
@@ -108,7 +108,7 @@ func TestRelayDeviceAdmissionFollowsAppliedSettings(t *testing.T) {
 	pending := settings
 	pending.RelayEnabled = false
 	pending.RelayURL = "https://pending-relay.example.test"
-	pending.RelayLANPort = availableServicePort(t)
+	pending.RelayLANPort = reserveRelayPort(t, service)
 	if err := service.SaveSettings(pending); err != nil {
 		t.Fatal(err)
 	}

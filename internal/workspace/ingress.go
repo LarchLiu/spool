@@ -36,7 +36,7 @@ func (s *Service) startWebLocked(settings Settings) error {
 	var listener net.Listener
 	if settings.WebEnabled {
 		var err error
-		listener, err = net.Listen("tcp", settings.Address())
+		listener, err = s.listenTCPLocked(settings.Address())
 		if err != nil {
 			return err
 		}

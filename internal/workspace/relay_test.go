@@ -7,7 +7,6 @@ import (
 	"encoding/base64"
 	"encoding/json"
 	"io"
-	"net"
 	"net/http"
 	"net/http/httptest"
 	"os"
@@ -176,7 +175,7 @@ func TestPairingCodeKeepsRegistrationCredentialLocal(t *testing.T) {
 	public := httptest.NewServer(broker)
 	defer public.Close()
 	defer service.Stop()
-	settings.RelayURL, settings.RelayLANPort = public.URL, availableServicePort(t)
+	settings.RelayURL, settings.RelayLANPort = public.URL, reserveRelayPort(t, service)
 	if err := service.SaveSettings(settings); err != nil {
 		t.Fatal(err)
 	}
@@ -361,12 +360,7 @@ func testRelayServiceLifecycle(t *testing.T, automatic bool) {
 	public := httptest.NewServer(broker)
 	defer public.Close()
 	defer broker.Close()
-	port, err := net.Listen("tcp", "127.0.0.1:0")
-	if err != nil {
-		t.Fatal(err)
-	}
-	settings.RelayLANPort = port.Addr().(*net.TCPAddr).Port
-	port.Close()
+	settings.RelayLANPort = reserveRelayPort(t, service)
 	settings.RelayURL = public.URL
 	if err := service.SaveSettings(settings); err != nil {
 		t.Fatal(err)

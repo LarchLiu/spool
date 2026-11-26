@@ -457,12 +457,7 @@ func TestRelayWebServiceEnableDisable(t *testing.T) {
 	broker, public := relayWebPublicServer(t, relay.ServerOptions{AllowUnregisteredHosts: true})
 	defer public.Close()
 	defer broker.Close()
-	port, err := net.Listen("tcp", "127.0.0.1:0")
-	if err != nil {
-		t.Fatal(err)
-	}
-	settings.RelayLANPort = port.Addr().(*net.TCPAddr).Port
-	port.Close()
+	settings.RelayLANPort = reserveRelayPort(t, service)
 	settings.RelayURL = public.URL
 	if err = service.SaveSettings(settings); err != nil {
 		t.Fatal(err)

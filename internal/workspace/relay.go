@@ -80,7 +80,7 @@ func (s *Service) startRelayLocked(settings Settings) error {
 		cancel()
 		return err
 	}
-	listener, err := net.Listen("tcp", net.JoinHostPort("", strconv.Itoa(settings.RelayLANPort)))
+	listener, err := s.listenTCPLocked(net.JoinHostPort("", strconv.Itoa(settings.RelayLANPort)))
 	if err != nil {
 		cancel()
 		host.Close()

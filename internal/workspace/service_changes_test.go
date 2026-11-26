@@ -18,17 +18,6 @@ import (
 	"spool/internal/testutil/voxlfixture"
 )
 
-func availableServicePort(t *testing.T) int {
-	t.Helper()
-	listener, err := net.Listen("tcp", "127.0.0.1:0")
-	if err != nil {
-		t.Fatal(err)
-	}
-	port := listener.Addr().(*net.TCPAddr).Port
-	_ = listener.Close()
-	return port
-}
-
 func requireServiceHealth(t *testing.T, address string) {
 	t.Helper()
 	client := &http.Client{Timeout: time.Second}
@@ -74,7 +63,7 @@ func TestApplyWebChangesKeepsDesktopTailnetAndActiveWork(t *testing.T) {
 	realtimeWrite(t, socket, realtimeInput{Type: "hello", CSRF: identity.CSRF, Visible: true})
 	realtimeReady(t, socket)
 
-	settings.Port = availableServicePort(t)
+	settings.Port = reserveServicePort(t, service, settings.Host)
 	settings.PublicURL = "https://new-entry.example.test"
 	settings.WebTrustedProxies = "192.0.2.10/32"
 	settings.TSNetHostname = "pending-node"
@@ -113,7 +102,7 @@ func TestApplyWebChangesKeepsDesktopTailnetAndActiveWork(t *testing.T) {
 func TestCancelServiceChangesRestoresOnlySelectedFields(t *testing.T) {
 	service, original := settingsService(t)
 	next := original
-	next.Port = availableServicePort(t)
+	next.Port = reserveServicePort(t, service, next.Host)
 	next.TSNetEnabled, next.TSNetHostname = true, "pending-node"
 	next.IdleMinutes++
 	next.HistoryCacheMiB, next.AutoStart = original.HistoryCacheMiB+1, false
@@ -285,7 +274,7 @@ func TestApplyTailnetChangesKeepsWebAndCoreAndSerializesNodes(t *testing.T) {
 	app, runner, web := service.app, service.runner, service.web
 	desktop, _ := service.LocalWebURL()
 	settings.TSNetHostname = "new-node"
-	settings.Port = availableServicePort(t)
+	settings.Port = reserveServicePort(t, service, settings.Host)
 	if err := service.SaveSettings(settings); err != nil {
 		t.Fatal(err)
 	}
@@ -323,7 +312,7 @@ func TestApplyRelayChangesSharesCoreAndUpdatesPublicWebMount(t *testing.T) {
 	_, public, token := relayWebBroker(t)
 	defer public.Close()
 	defer service.Stop()
-	settings.RelayURL, settings.RelayLANPort = public.URL, availableServicePort(t)
+	settings.RelayURL, settings.RelayLANPort = public.URL, reserveRelayPort(t, service)
 	if err := service.SaveSettings(settings); err != nil {
 		t.Fatal(err)
 	}
@@ -332,7 +321,7 @@ func TestApplyRelayChangesSharesCoreAndUpdatesPublicWebMount(t *testing.T) {
 	}
 	app, runner, web := service.app, service.runner, service.web
 	settings.RelayEnabled, settings.RelayWebEnabled = true, true
-	settings.Port = availableServicePort(t)
+	settings.Port = reserveServicePort(t, service, settings.Host)
 	if err := service.SaveSettings(settings); err != nil {
 		t.Fatal(err)
 	}
@@ -382,7 +371,7 @@ func TestRelayWebDeploymentSettingsReadOnlyAndOperatorBlock(t *testing.T) {
 	service, settings := settingsService(t)
 	broker, public, token := relayWebBroker(t)
 	defer service.Stop()
-	settings.RelayURL, settings.RelayLANPort = public.URL, availableServicePort(t)
+	settings.RelayURL, settings.RelayLANPort = public.URL, reserveRelayPort(t, service)
 	if err := service.SaveSettings(settings); err != nil {
 		t.Fatal(err)
 	}
@@ -484,7 +473,7 @@ func TestSavingRuntimePreservesOtherPendingEntrySettings(t *testing.T) {
 	runner, server, web := service.runner, service.server, service.web
 	next := original
 	next.WebEnabled = false
-	next.Port = availableServicePort(t)
+	next.Port = reserveServicePort(t, service, next.Host)
 	next.PublicURL = "https://pending.example.test"
 	next.IdleMinutes++
 	next.ProxyEnabled = false
@@ -553,7 +542,7 @@ func TestFailedRelayApplyRestoresPreviousConnection(t *testing.T) {
 	_, public, token := relayWebBroker(t)
 	defer public.Close()
 	defer service.Stop()
-	settings.RelayURL, settings.RelayLANPort = public.URL, availableServicePort(t)
+	settings.RelayURL, settings.RelayLANPort = public.URL, reserveRelayPort(t, service)
 	if err := service.SaveSettings(settings); err != nil {
 		t.Fatal(err)
 	}

@@ -240,7 +240,7 @@ func (s *Service) beginWebProxyCheckLocked(parent context.Context, settings Sett
 	var listener net.Listener
 	var setupErr error
 	if preflight {
-		listener, setupErr = net.Listen("tcp", settings.Address())
+		listener, setupErr = s.listenTCPLocked(settings.Address())
 		if ingress != nil && s.activeSettings.WebEnabled && webListenerOverlaps(settings, s.activeSettings) && (setupErr == nil || errors.Is(setupErr, syscall.EADDRINUSE)) {
 			// Some systems permit wildcard and specific-IP listeners to bind
 			// the same port. Callbacks may still reach the existing listener,

@@ -31,6 +31,7 @@ type Service struct {
 	webProxyTransport   http.RoundTripper
 	webProxyJob         *webProxyDetectionJob
 	webProxyCheck       *WebProxyCheck
+	openTCPListener     func(network, address string) (net.Listener, error)
 	relayError          string
 	app                 *App
 	runner              *agent.CLIRunner
@@ -282,6 +283,14 @@ func (s *Service) ServeListener(listener net.Listener) error {
 	}
 	s.serveLocked(s.server, listener)
 	return nil
+}
+
+func (s *Service) listenTCPLocked(address string) (net.Listener, error) {
+	listen := s.openTCPListener
+	if listen == nil {
+		listen = net.Listen
+	}
+	return listen("tcp", address)
 }
 
 func (s *Service) serveLocked(server *http.Server, listener net.Listener) {

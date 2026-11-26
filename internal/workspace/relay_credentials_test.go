@@ -4,7 +4,6 @@ import (
 	"crypto/sha256"
 	"encoding/hex"
 	"encoding/json"
-	"net"
 	"net/http"
 	"net/http/httptest"
 	"os"
@@ -46,12 +45,7 @@ func TestRelayUnregisterPreservesOtherOriginsAndStopsOnlyRelay(t *testing.T) {
 		urls = append(urls, public.URL)
 		tokens = append(tokens, service.relayRegistrationToken(public.URL))
 	}
-	port, err := net.Listen("tcp", "127.0.0.1:0")
-	if err != nil {
-		t.Fatal(err)
-	}
-	settings.RelayLANPort = port.Addr().(*net.TCPAddr).Port
-	port.Close()
+	settings.RelayLANPort = reserveRelayPort(t, service)
 	settings.RelayEnabled = true
 	if err := service.SaveSettings(settings); err != nil {
 		t.Fatal(err)
@@ -182,12 +176,7 @@ func TestRelayRegistrationsRememberEachOriginAcrossRestarts(t *testing.T) {
 				t.Fatal(err)
 			}
 			t.Cleanup(func() { service.Close() })
-			port, err := net.Listen("tcp", "127.0.0.1:0")
-			if err != nil {
-				t.Fatal(err)
-			}
-			settings.RelayLANPort = port.Addr().(*net.TCPAddr).Port
-			port.Close()
+			settings.RelayLANPort = reserveRelayPort(t, service)
 			for _, e := range []*endpoint{endpoints[0], endpoints[1], endpoints[0]} {
 				settings.RelayEnabled = false
 				settings.RelayURL = e.url + "/"

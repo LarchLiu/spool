@@ -481,7 +481,7 @@ func TestDetectWebProxyConcurrentSettingsAndLifecycle(t *testing.T) {
 			case "trust":
 				settings.WebTrustedProxies = "198.51.100.2/32"
 			case "listener":
-				settings.Port = availableServicePort(t)
+				settings.Port = reserveServicePort(t, service, settings.Host)
 			case "unrelated":
 				settings.IdleMinutes++
 			case "stop":
@@ -631,7 +631,7 @@ func TestWebProxyPreflightAndApplyRespectUserInput(t *testing.T) {
 
 func TestWebProxyPortPreflightUsesTemporaryCallbackOnlyEntry(t *testing.T) {
 	service, settings := settingsService(t)
-	settings.Port = availableServicePort(t)
+	settings.Port = reserveServicePort(t, service, settings.Host)
 	proxy := detectionProxyTo(t, settings.Address(), nil)
 	appliedWebProxyOrigin(t, service, proxy.URL)
 	settings.PublicURL = proxy.URL // Only the port changes.
@@ -730,7 +730,7 @@ func TestWebProxyApplyWaitsForPreflightPortCleanup(t *testing.T) {
 	for _, action := range []string{"apply", "edit", "stop"} {
 		t.Run(action, func(t *testing.T) {
 			service, settings := settingsService(t)
-			settings.PublicURL, settings.Port = "https://chat.example.test", availableServicePort(t)
+			settings.PublicURL, settings.Port = "https://chat.example.test", reserveServicePort(t, service, settings.Host)
 			entered := make(chan struct{})
 			var calls atomic.Int64
 			service.webProxyTransport = probeRoundTripper(func(r *http.Request) (*http.Response, error) {
@@ -810,7 +810,7 @@ func TestWebProxyDelayedCancellationCannotStopNewCheck(t *testing.T) {
 		t.Fatal(err)
 	}
 	old := service.Status().WebProxyCheck.ID
-	settings.Port = availableServicePort(t)
+	settings.Port = reserveServicePort(t, service, settings.Host)
 	if err := service.SaveSettings(settings); err != nil {
 		t.Fatal(err)
 	}

@@ -40,12 +40,7 @@ func settingsService(t *testing.T) (*Service, Settings) {
 	}
 	t.Cleanup(func() { _ = service.Close() })
 	settings := DefaultSettings()
-	listener, err := net.Listen("tcp", "127.0.0.1:0")
-	if err != nil {
-		t.Fatal(err)
-	}
-	settings.Port = listener.Addr().(*net.TCPAddr).Port
-	listener.Close()
+	settings.Port = reserveServicePort(t, service, settings.Host)
 	if err := service.Store.SaveSettings(settings); err != nil {
 		t.Fatal(err)
 	}
@@ -124,7 +119,7 @@ func TestSavingRuntimeSettingsAppliesImmediatelyWithoutRestart(t *testing.T) {
 	public := httptest.NewServer(broker)
 	defer public.Close()
 	defer service.Stop()
-	settings.RelayURL, settings.RelayLANPort = public.URL, availableServicePort(t)
+	settings.RelayURL, settings.RelayLANPort = public.URL, reserveRelayPort(t, service)
 	if err := service.SaveSettings(settings); err != nil {
 		t.Fatal(err)
 	}
