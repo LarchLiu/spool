@@ -225,8 +225,9 @@ viewer. In-flight writes are revoked, never replayed on another connection.
 
 Existing single-server settings migrate to one server named Spool and retain
 its original node/session directories. Connection settings and transport use native
-controls with no loopback CONNECT proxy. Mermaid diagrams alone use an isolated,
-offline WebView with a status/height bridge; see [Markdown rendering](../docs/markdown.md).
+controls with no loopback CONNECT proxy. Mermaid uses an isolated, offline WebView
+for initial layout, then caches and draws vectors natively; see
+[Markdown rendering](../docs/markdown.md).
 Each network entry enforces its exact HTTPS origin,
 validates TLS, rejects redirects, and carries Origin/CSRF requirements. Only the
 secure Spool cookie is retained in private, non-backed-up storage.

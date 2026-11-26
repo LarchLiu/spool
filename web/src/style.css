@@ -2276,14 +2276,43 @@ a.attachment-open {
   position: relative;
   min-width: 0;
 }
-.markdown-mermaid-frame {
-  display: block;
-  width: 100%;
+.mermaid-compiler {
+  position: fixed;
+  left: -10000px;
+  top: 0;
+  width: 800px;
+  height: 600px;
+  opacity: 0;
+  pointer-events: none;
   border: 0;
 }
-.markdown-mermaid[data-ready="false"] > iframe {
+.markdown-mermaid-viewport {
+  padding: 12px 16px 16px;
+  overflow: hidden;
+}
+.markdown-mermaid-image {
+  display: block;
+  max-width: 100%;
+  height: auto;
+  margin: auto;
+}
+.markdown-mermaid[data-ready="false"] > .markdown-mermaid-viewport,
+.markdown-mermaid[data-ready="false"] > .mermaid-zoom-toolbar {
+  display: none;
+}
+.markdown-mermaid-viewport[data-expanded="true"] {
   position: absolute;
-  visibility: hidden;
+  inset: 0;
+  padding: 0;
+  touch-action: none;
+  cursor: grab;
+}
+.markdown-mermaid-viewport[data-expanded="true"] > img {
+  position: absolute;
+  max-width: none;
+  margin: 0;
+  transform-origin: 0 0;
+  user-select: none;
   pointer-events: none;
 }
 .markdown-code-copy[aria-pressed="true"] {

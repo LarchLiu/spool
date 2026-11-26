@@ -5,7 +5,7 @@
 
 # The gomobile AAR supplies its own keep rules for go.** and spoolnet.**.
 
-# The offline Mermaid document reports only its revision, status and height.
+# The offline Mermaid document exports bounded, self-contained SVG for native display.
 -keepclassmembers class com.cloudgeek.spool.android.NativeMermaid$Bridge {
     @android.webkit.JavascriptInterface <methods>;
 }

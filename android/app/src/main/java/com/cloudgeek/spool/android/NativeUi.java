@@ -31,6 +31,7 @@ final class NativeUi extends WebPalette {
     NativeSyntax syntax;
     NativeCjkFallback cjkFonts;
     NativeToolDetails toolDetails;
+    final NativeMermaidCache mermaidCache = new NativeMermaidCache();
     java.util.function.Consumer<View> beforeDisclosure = view -> {};
     java.util.function.Function<String, org.json.JSONObject> people;
 

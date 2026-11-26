@@ -27,11 +27,23 @@ selectable/copyable text.
 
 The Mermaid library ships with the application; rendering requires no external
 diagram service or CDN. All clients use the same isolated document and strict
-Mermaid configuration. Web/Desktop use a sandboxed iframe. Android keeps its
-native Markdown layout and uses an offline WebView only for each diagram. The
-document blocks remote resources; diagram links and callbacks are not activated.
-The Android bridge accepts only the render revision, success state and height.
-Detached Android diagrams destroy their WebView and reject stale results.
+Mermaid configuration. Web/Desktop serialize first renders through one temporary
+sandboxed iframe and release it when the queue is empty. Finished diagrams use
+static SVG images; the inline diagram and enlarged viewer share the same vector,
+and pan/zoom runs in the host UI. Identical pending requests share one compilation.
+The Web/Desktop memory cache holds at most 32 results within an estimated 8 MiB
+budget, keyed by source and theme. Android keeps its native Markdown layout: an
+offline WebView generates the first SVG, then releases that WebView and draws the
+vector natively, including pan and zoom. Its bounded memory cache also lets
+recycled history rows and the enlarged viewer reuse completed vectors.
+
+No diagram source or cache is written to disk. The document blocks remote
+resources; diagram links and callbacks are not activated. Web/Desktop display
+SVGs in image mode, without inserting their markup into the application DOM.
+The Android bridge accepts the render revision, success state, height and bounded
+SVG output; both clients validate exported resources and dimensions. Unmounted
+diagrams cancel unwanted compilation and reject stale results. Cache eviction,
+changed source or theme, or restarting the client can require another compilation.
 
 ## Development
 
@@ -51,11 +63,15 @@ sh android/gradlew :app:testDebugUnitTest --tests '*NativeMermaidTest' --tests '
 The browser check runs Chromium and WebKit against a production build with the
 server's CSP, the Vite development client and the generated Android document.
 It checks common diagram types, copy, stream updates, invalid-source recovery,
-themes, narrow/wide layouts, inert diagram links and isolation:
+themes, narrow/wide layouts, cache reuse after remounts and preview openings,
+shared compilation, cancellation, inert diagram links and isolation:
 
 ```sh
 sh tools/run.sh mermaid-assets bun android/tools/build-mermaid.mjs
 sh tools/run.sh mermaid-browser bun web/test/mermaid-smoke.mjs
+# Check native drawing against the actual SVGs exported by both browser engines.
+SPOOL_MERMAID_VECTOR_DIR="$PWD/build/artifacts/mermaid" sh android/gradlew \
+  :app:testDebugUnitTest --tests '*NativeMermaidTest' --tests '*NativeCodeBlockTest'
 # Exercise the desktop server gateway with sandboxed script requests as well.
 sh tools/run.sh mermaid-desktop env SPOOL_MERMAID_BROWSER=1 go test ./cmd/desktop -run TestDesktopMermaidBrowser -v
 ```
