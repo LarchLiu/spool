@@ -199,6 +199,7 @@ public final class MainActivity extends Activity {
     private int adbPermissionPort, adbPermissionSession = -1;
     private final Runnable adbPoll = this::refreshAdbAvailability;
     private NativeFileBrowser fileBrowser;
+    private NativeProjectUpload projectUpload;
     private NativeFileModel fileState;
     private Button loginSubmit;
     private TextView heading, subheading, connectionText, loginError, connectionHint;
@@ -733,6 +734,9 @@ public final class MainActivity extends Activity {
         if (sidebar != null) sidebar.deactivate();
         sidebar = null;
         if (fileBrowser != null) fileBrowser.deactivate();
+        NativeProjectUpload retainedUpload = reopenFiles ? projectUpload : null;
+        if (retainedUpload != null) projectUpload = null;
+        else closeProjectUpload();
         fileBrowser = null;
         ui = new NativeUi(this, dark, locale());
         ui.avatars = avatarImages;
@@ -785,7 +789,8 @@ public final class MainActivity extends Activity {
         setContentView(root);
         root.requestApplyInsets();
         if (reopenSidebar) openSidebar(false);
-        else if (reopenFiles && user != null) openFiles(".");
+        else if (reopenFiles && user != null) openFiles(".", true, retainedUpload);
+        if (retainedUpload != null && retainedUpload != projectUpload) retainedUpload.close();
         if (settingsOpen) settingsPage();
         if (appearanceDialog != null) { appearanceDialog.bind(ui, theme, language, body -> {}); bindAppUpdates(); }
         if (!settingsOpen && !routeLoginRequired && user != null && !inbox.active.isEmpty()) openPeople(inbox.active);
@@ -1705,6 +1710,7 @@ public final class MainActivity extends Activity {
         agentsInitialized = false;
         if (chatRefresh != null) chatRefresh.stop();
         if (fileBrowser != null) fileBrowser.deactivate();
+        closeProjectUpload();
         fileBrowser = null;
         fileState = null;
         if (forget) avatarImages.clear();
@@ -3028,6 +3034,15 @@ public final class MainActivity extends Activity {
         return false;
     }
 
+    private boolean canUploadFiles() {
+        if (user == null || routeLoginRequired) return false;
+        for (int i = 0; i < projects.length(); i++)
+            if (at(projects, i).optString("id").equals(projectID)) return at(projects, i).optBoolean("can_upload", false);
+        return false;
+    }
+
+    private void closeProjectUpload() { if (projectUpload != null) { projectUpload.close(); projectUpload = null; } }
+
     private void updateComposer() {
         updateChatOptions();
         renderNavigation();
@@ -3166,6 +3181,7 @@ public final class MainActivity extends Activity {
 
     private void closeDrawer(boolean showPage) {
         if (fileBrowser != null) fileBrowser.deactivate();
+        closeProjectUpload();
         fileBrowser = null;
         FrameLayout previous = drawer;
         drawer = null;
@@ -3337,6 +3353,8 @@ public final class MainActivity extends Activity {
         workspaceCached = true;
         workspaceUserID = user == null ? workspaceUserID : user.optString("id");
         projects = array(value, "projects");
+        if (projectUpload != null) projectUpload.permissionsChanged();
+        if (fileBrowser != null) fileBrowser.uploadPermissionsChanged();
         JSONArray incoming = array(value, "chats");
         chats = NativeNavigation.merge(chats, incoming);
         NativeNavigation.Selection selected = navigation.select(projectID, chatID, projects, incoming);
@@ -4757,6 +4775,10 @@ public final class MainActivity extends Activity {
     @Override
     protected void onActivityResult(int requestCode, int resultCode, Intent data) {
         super.onActivityResult(requestCode, resultCode, data);
+        if (NativeProjectUpload.handles(requestCode)) {
+            if (projectUpload != null) projectUpload.result(requestCode, resultCode, data);
+            return;
+        }
         if (NativeDesktopDocuments.handles(requestCode)) {
             if (desktopDialog != null) desktopDialog.documents.result(requestCode, resultCode, data);
             return;
@@ -5474,6 +5496,10 @@ public final class MainActivity extends Activity {
     }
 
     private void openFiles(String path, boolean animate) {
+        openFiles(path, animate, null);
+    }
+
+    private void openFiles(String path, boolean animate, NativeProjectUpload retainedUpload) {
         closeDrawer();
         panel = "files";
         NativeDrawer overlay = new NativeDrawer(ui, true, this::closeDrawer);
@@ -5490,6 +5516,31 @@ public final class MainActivity extends Activity {
                 this::openExternalLink, this::closeDrawer,
                 value -> getPreferences(MODE_PRIVATE).edit().putFloat("fileTreeFraction", (float) value).apply());
         fileBrowser.gitPanel.write = this::requestProjectFile;
+        if (retainedUpload != null && retainedUpload.rebind(ui, fileBrowser)) projectUpload = retainedUpload;
+        else {
+            int uploadGeneration = generation, uploadAuth = authEpoch, uploadSelection = selectionEpoch;
+            String uploadCSRF = csrf, uploadLocale = locale();
+            projectUpload = new NativeProjectUpload(this, ui, fileBrowser, io, () -> {
+                if (fileClient == null) throw new IOException("No file server configured");
+                spoolnet.ProjectFiles files = fileClient.openProjectFiles();
+                return new NativeProjectUpload.Transport() {
+                    public void upload(String apiPath, String name, InputStream input) throws Exception {
+                        decodeResponse(files.upload(apiPath, name, uploadCSRF, uploadLocale, maximum -> {
+                            byte[] buffer = new byte[(int) maximum]; int count = input.read(buffer);
+                            return count < 0 ? new byte[0] : java.util.Arrays.copyOf(buffer, count);
+                        }));
+                    }
+                    public void close() { files.close(); }
+                };
+            }, () -> !destroyed && user != null && !routeLoginRequired && generation == uploadGeneration
+                    && authEpoch == uploadAuth && selectionEpoch == uploadSelection && client == fileClient && fileState == ownerFiles,
+                    this::canUploadFiles,
+                    error -> { if (error instanceof ApiFailure && ((ApiFailure) error).status == 401) expire(); });
+        }
+        NativeProjectUpload ownerUpload = projectUpload;
+        fileBrowser.canUpload = this::canUploadFiles;
+        fileBrowser.upload = ownerUpload::pick;
+        fileBrowser.uploadScopeChanged = ownerUpload::cancel;
         overlay.sheet.addView(fileBrowser, new LinearLayout.LayoutParams(-1, -1));
         root.addView(overlay, new FrameLayout.LayoutParams(-1, -1));
         overlay.show(animate);
@@ -6011,6 +6062,7 @@ public final class MainActivity extends Activity {
         // The explicit SAF round trip pauses capture and retains this view's token.
         // Other background transitions still close the desktop immediately.
         if (desktopDialog == null || !desktopDialog.documents.waiting()) closeDesktop();
+        if (projectUpload != null && !projectUpload.waiting()) projectUpload.cancel();
         if (fileBrowser != null) fileBrowser.deactivate();
         if (historyScroll != null) historyScroll.suspend();
         if (markwonHistory != null) markwonHistory.stopScroll();
@@ -6038,6 +6090,7 @@ public final class MainActivity extends Activity {
         for (AdbSession session : adbSessions.values()) session.discovery.close();
         adbSessions.clear();
         if (fileBrowser != null) fileBrowser.deactivate();
+        closeProjectUpload();
         fileBrowser = null;
         destroyed = true;
         if (historyScroll != null) historyScroll.dispose();

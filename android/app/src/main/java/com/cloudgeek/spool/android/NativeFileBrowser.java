@@ -6,7 +6,9 @@ import android.graphics.drawable.Drawable;
 import android.text.Editable;
 import android.text.TextWatcher;
 import android.view.Gravity;
+import android.view.GestureDetector;
 import android.view.KeyEvent;
+import android.view.MotionEvent;
 import android.view.View;
 import android.view.ViewGroup;
 import android.widget.BaseAdapter;
@@ -40,6 +42,14 @@ final class NativeFileBrowser extends LinearLayout {
     final NativeFilePreview preview;
     final NativePanelTabs panelTabs;
     final NativeGitPanel gitPanel;
+    java.util.function.BooleanSupplier canUpload = () -> false;
+    Consumer<String> upload = directory -> {};
+    Runnable uploadScopeChanged = () -> {};
+    boolean uploadBusy;
+    private NativePopover uploadMenu;
+    private boolean uploadLongPressed, uploadMenuAllowed;
+    private String uploadMessage = "";
+    private boolean uploadFailed;
     private final NativeUi ui;
     private final Read read;
     private final LinearLayout title;
@@ -88,10 +98,41 @@ final class NativeFileBrowser extends LinearLayout {
         list.setSelector(new android.graphics.drawable.ColorDrawable(0)); list.setCacheColorHint(0); list.setPadding(ui.dp(14), 0, ui.dp(14), 0); list.setClipToPadding(false);
         list.setContentDescription(ui.t("Project file tree")); list.setAdapter(adapter);
         list.setOnItemClickListener((parent, view, position, id) -> activate(position));
+        list.setOnItemLongClickListener((parent, view, position, id) -> {
+            if (position < 0 || position >= rows.size()) return false;
+            NativeFileModel.Entry entry = rows.get(position).entry;
+            return uploadLongPressed = showUploadMenu(view, entry.directory ? entry.path : parentDirectory(entry.path));
+        });
+        GestureDetector longPress = new GestureDetector(ui.context, new GestureDetector.SimpleOnGestureListener() {
+            @Override public boolean onDown(MotionEvent event) { return true; }
+            @Override public void onLongPress(MotionEvent event) {
+                if (uploadLongPressed) return;
+                // Horizontal padding alongside a row belongs to that row's directory.
+                int position = list.pointToPosition(list.getWidth() / 2, (int) event.getY());
+                NativeFileModel.Entry entry = position < 0 || position >= rows.size() ? null : rows.get(position).entry;
+                View anchor = entry == null ? list : list.getChildAt(position - list.getFirstVisiblePosition());
+                uploadLongPressed = showUploadMenu(anchor, entry == null ? "." : entry.directory ? entry.path : parentDirectory(entry.path));
+                if (uploadLongPressed) {
+                    // Retire ListView's own tap/long-press handling, so releasing
+                    // this gesture cannot expand a folder or open a preview.
+                    MotionEvent cancel = MotionEvent.obtain(event); cancel.setAction(MotionEvent.ACTION_CANCEL);
+                    list.onTouchEvent(cancel); cancel.recycle();
+                    list.performHapticFeedback(android.view.HapticFeedbackConstants.LONG_PRESS);
+                }
+            }
+        });
+        list.setOnTouchListener((view, event) -> {
+            if (event.getActionMasked() == MotionEvent.ACTION_DOWN) uploadLongPressed = false;
+            longPress.onTouchEvent(event);
+            boolean consumed = uploadLongPressed;
+            if (event.getActionMasked() == MotionEvent.ACTION_UP || event.getActionMasked() == MotionEvent.ACTION_CANCEL) uploadLongPressed = false;
+            return consumed;
+        });
         list.setOnKeyListener((view, code, event) -> key(code, event));
         list.setOnFocusChangeListener((view, focused) -> adapter.notifyDataSetChanged());
         treeSection.addView(list, new FrameLayout.LayoutParams(-1, -1));
         empty = NativeFilePreview.empty(ui, ui.t("This directory is empty.")); treeSection.addView(empty, new FrameLayout.LayoutParams(-1, -2));
+        empty.setOnLongClickListener(view -> showUploadMenu(view, "."));
         loading = new NativeSpinner(ui, 14, ui.t("Loading files…"));
         FrameLayout.LayoutParams progress = new FrameLayout.LayoutParams(ui.dp(14), ui.dp(14), Gravity.BOTTOM | Gravity.END); progress.setMarginEnd(ui.dp(12)); progress.bottomMargin = ui.dp(10);
         treeSection.addView(loading, progress);
@@ -140,6 +181,7 @@ final class NativeFileBrowser extends LinearLayout {
         preview.releaseDocuments();
         workspaceRequest++; workspacePending = false; removeCallbacks(workspacePoll);
         header.dismiss();
+        dismissUploadMenu();
         state.requested.removeAll(pending); pending.clear();
         hideKeyboard();
     }
@@ -186,6 +228,7 @@ final class NativeFileBrowser extends LinearLayout {
             state.workspaceError = error == null ? "" : error.getMessage() == null ? ui.t("Request failed") : error.getMessage();
             if (!oldPath.equals(newPath) || wasReady != state.ready()) {
                 header.dismiss();
+                dismissUploadMenu(); uploadScopeChanged.run(); uploadMessage = "";
                 NativeFileTarget target = previous == null || oldPath.equals(newPath) ? state.target : null;
                 state.clearScope(); pending.clear(); revealing = "";
                 gitPanel.scopeChanged();
@@ -203,6 +246,7 @@ final class NativeFileBrowser extends LinearLayout {
     }
     void selectWorkspace(String path) {
         if (!active || state.workspace != null && path.equals(state.workspace.optString("path")) || !state.selectWorkspace(path)) return;
+        dismissUploadMenu(); uploadScopeChanged.run(); uploadMessage = "";
         state.clearScope(); pending.clear(); revealing = "";
         gitPanel.scopeChanged();
         header.dismiss(); bindSearch(); bindPreview(); renderTree();
@@ -262,11 +306,47 @@ final class NativeFileBrowser extends LinearLayout {
     }
 
     void selectPanel(boolean git) {
+        dismissUploadMenu();
         state.gitPanel = git;
         header.refresh.setContentDescription(ui.t(git ? "Refresh Git information" : "Refresh files"));
         panelTabs.select(git ? "git" : "project"); split.setVisibility(git ? GONE : VISIBLE); gitPanel.setVisibility(git ? VISIBLE : GONE);
         searchToggle.setVisibility(git ? GONE : VISIBLE); bindSearch();
         if (started) gitPanel.activate(git);
+    }
+
+    private static String parentDirectory(String path) { int slash = path.lastIndexOf('/'); return slash < 0 ? "." : path.substring(0, slash); }
+    private void dismissUploadMenu() { if (uploadMenu != null) { uploadMenu.dismiss(); uploadMenu = null; } }
+    boolean showUploadMenu(View anchor, String directory) {
+        if (!active || state.project.isEmpty() || state.gitPanel || !state.ready()) return false;
+        dismissUploadMenu();
+        String target = NativeFileModel.key(directory);
+        int scope = state.scope;
+        NativePopover menu = new NativePopover(ui, 280, 8, 5, 16);
+        uploadMenu = menu;
+        TextView destination = ui.text(ui.t("Upload to {path}", "path", target.equals(".") ? "/" : target), 12, ui.muted);
+        destination.setPadding(ui.dp(8), ui.dp(8), ui.dp(8), ui.dp(8));
+        menu.content.setContentDescription(ui.t("Project file actions")); menu.content.addView(destination);
+        boolean allowed = canUpload.getAsBoolean(); uploadMenuAllowed = allowed;
+        LinearLayout item = menu.selectOption(ui.t("Upload files"), "arrow-up", 16, 8, ui.text, () -> {
+            dismissUploadMenu();
+            if (active && scope == state.scope && !uploadBusy && canUpload.getAsBoolean()) upload.accept(target);
+        });
+        item.setMinimumHeight(ui.dp(48)); item.setEnabled(allowed && !uploadBusy); item.setAlpha(item.isEnabled() ? 1f : .5f);
+        if (!allowed) {
+            TextView reason = ui.text(ui.t("File upload permission is disabled"), 12, ui.muted);
+            reason.setPadding(ui.dp(8), ui.dp(4), ui.dp(8), ui.dp(8)); menu.content.addView(reason);
+        }
+        menu.showSelect(anchor, -1, 220, 48);
+        return true;
+    }
+    void uploadPermissionsChanged() { if (uploadMenu != null && uploadMenuAllowed != canUpload.getAsBoolean()) dismissUploadMenu(); }
+    void uploadStatus(String message, boolean failed) { uploadMessage = message; uploadFailed = failed; renderTree(); }
+    void uploaded(String directory) {
+        // Retire older listing callbacks so they cannot hide the newly saved file.
+        directoryRequest++; state.requested.removeAll(pending); pending.clear();
+        state.requested.remove(NativeFileModel.key(directory));
+        if (!directory.equals(".")) { state.expanded.add(directory); NativeFileModel.ancestors(directory, state.expanded); }
+        loadDirectory("."); loadDirectory(directory); loadExpanded(); renderTree();
     }
 
     private void activate(int position) {
@@ -307,6 +387,11 @@ final class NativeFileBrowser extends LinearLayout {
         adapter.notifyDataSetChanged(); loading.setVisibility(pending.isEmpty() ? GONE : VISIBLE);
         empty.setVisibility(state.ready() && pending.isEmpty() && state.directories.values().stream().allMatch(List::isEmpty) && state.error.isEmpty() ? VISIBLE : GONE);
         notices.removeAllViews();
+        if (!uploadMessage.isEmpty()) {
+            TextView status = NativeFilePreview.notice(ui, uploadMessage);
+            status.setTextColor(uploadFailed ? ui.error : ui.muted);
+            status.setAccessibilityLiveRegion(View.ACCESSIBILITY_LIVE_REGION_POLITE); notices.addView(status);
+        }
         if (!state.ready()) {
             String message = !state.workspaceError.isEmpty() ? state.workspaceError : state.workspace == null ? ui.t("Loading session directory…") : ui.t("Session directory is unavailable");
             TextView notice = NativeFilePreview.notice(ui, message + (state.workspaceError.isEmpty() ? "" : "  " + ui.t("Retry")));

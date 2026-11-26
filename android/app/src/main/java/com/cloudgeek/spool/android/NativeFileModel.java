@@ -43,6 +43,8 @@ final class NativeFileModel {
     NativeFileTarget loadedTarget;
     boolean searchOpen, truncated, gitPanel;
     int epoch, fileRequest;
+    // Unlike read epochs, workspace ownership survives the system picker pause.
+    int scope;
     double split = .32;
 
     NativeFileModel(String project) { this(project, ""); }
@@ -53,6 +55,8 @@ final class NativeFileModel {
     String filePath(String path, String mode) { return NativeFileData.filePath(project, chat, path, mode, workspacePath()); }
     String directoryPath(String path) { return apiBase() + "/files?path=" + android.net.Uri.encode(path)
             + (workspacePath().isEmpty() ? "" : "&workspace=" + android.net.Uri.encode(workspacePath())); }
+    String uploadPath(String directory) { return apiBase() + "/upload?path=" + android.net.Uri.encode(key(directory))
+            + (chat.isEmpty() || workspace == null ? "" : "&workspace=" + android.net.Uri.encode(workspace.optString("path"))); }
     boolean ready() { return chat.isEmpty() || workspace != null && workspace.optBoolean("available"); }
 
     void receiveWorkspace(JSONObject latest) {
@@ -85,6 +89,7 @@ final class NativeFileModel {
     }
 
     void clearScope() {
+        scope++;
         reset(); closeSearch();
         selected = focused = fileError = "";
         file = null; target = loadedTarget = null;
