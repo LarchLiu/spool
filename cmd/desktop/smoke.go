@@ -220,10 +220,85 @@ func (p *panel) probeStartupChat(ctx context.Context, report string) error {
 	if err := p.probeLoginAppearance(ctx, view, report); err != nil {
 		return err
 	}
+	if err := p.probePreloadedSettingsViewport(ctx); err != nil {
+		return err
+	}
 	if _, err := view.Page().EvalContext(ctx, `document.querySelector('a.desktop-settings').click();`); err != nil {
 		return err
 	}
-	return p.waitChatSettings(ctx, view)
+	if err := p.waitChatSettings(ctx, view); err != nil {
+		return err
+	}
+	_, err := p.settingsView.Page().EvalContext(ctx, `
+		await new Promise(resolve => setTimeout(resolve, 250));
+		cancelAnimationFrame(window.smokeSettingsFrame);
+		const frames = window.smokeSettingsFrames;
+		if (frames.length < 2 || frames.some(frame => frame !== frames[0]))
+			throw new Error('Settings selection changed during first entry: ' + JSON.stringify(frames));
+	`)
+	return err
+}
+
+func (p *panel) smokeSettingsStartupOnly(report string, result chan<- error) {
+	ctx, cancel := context.WithTimeout(context.Background(), 20*time.Second)
+	defer cancel()
+	err := p.probeStartupChat(ctx, report)
+	if err == nil {
+		body, _ := json.Marshal(map[string]any{"scope": "settings-startup", "native": true, "preloaded_viewport": true, "first_selection_stable": true})
+		err = os.WriteFile(report, body, 0o600)
+	}
+	result <- err
+	mygo.App.Quit()
+}
+
+func (p *panel) probePreloadedSettingsViewport(ctx context.Context) error {
+	type viewport struct {
+		view          *mygo.WebView
+		width, height int
+	}
+	ready := make(chan viewport, 1)
+	p.window.Update(func() {
+		width, height := p.window.ContentSize()
+		ready <- viewport{p.settingsView, width, height}
+	})
+	var expected viewport
+	select {
+	case expected = <-ready:
+	case <-ctx.Done():
+		return ctx.Err()
+	}
+	if expected.view == nil {
+		return fmt.Errorf("settings WebView was not preloaded")
+	}
+	probeContext, cancel := context.WithTimeout(ctx, 5*time.Second)
+	defer cancel()
+	if err := waitChatChecks(probeContext, expected.view.Page(), fmt.Sprintf(`
+		const sidebar = document.querySelector('.settings-sidebar');
+		const width = sidebar?.getBoundingClientRect().width;
+		return {
+			ready: innerWidth === %d && innerHeight === %d && width > 0 &&
+				!!document.querySelector('[data-page="Service"] input'),
+			viewport: [innerWidth, innerHeight], sidebar: width,
+		};
+	`, expected.width, expected.height)); err != nil {
+		return err
+	}
+	_, err := expected.view.Page().EvalContext(ctx, `
+		window.smokeSettingsFrames = [];
+		const sample = () => {
+			const selected = document.querySelector('.settings-nav-group [aria-current="page"]');
+			const rect = selected?.getBoundingClientRect();
+			window.smokeSettingsFrames.push(JSON.stringify([
+				selected?.dataset.section, rect?.x, rect?.y, rect?.width, rect?.height,
+				selected && getComputedStyle(selected).backgroundColor,
+			]));
+			window.smokeSettingsFrame = requestAnimationFrame(sample);
+		};
+		if (document.querySelector('.settings-nav-group [aria-current="page"]')?.dataset.section !== 'Service')
+			throw new Error('Service must be selected before Settings is shown');
+		sample();
+	`)
+	return err
 }
 
 func (p *panel) probeLoginAppearance(ctx context.Context, view *mygo.WebView, report string) error {

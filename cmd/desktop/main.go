@@ -128,11 +128,11 @@ func runDesktop() (runErr error) {
 	development := mygo.IsDev()
 	root := flag.String("data-dir", workspace.DefaultDataDir(development), "Data directory (database in db/spool.sqlite)")
 	smoke := flag.String("release-smoke", "", "Probe the packaged desktop using fresh temporary data; write a JSON report")
-	smokeProbe := flag.String("smoke-probe", "", "Run only the notifications, servers, server-startup or renderer native probe (requires --release-smoke)")
+	smokeProbe := flag.String("smoke-probe", "", "Run only the notifications, servers, server-startup, settings-startup or renderer native probe (requires --release-smoke)")
 	smokeHistoryPath := flag.String("smoke-release-history", "", "ReleaseHistory JSON fixture for --release-smoke screenshots only")
 	flag.Parse()
-	if *smokeProbe != "" && (*smoke == "" || (*smokeProbe != "notifications" && *smokeProbe != "servers" && *smokeProbe != "server-startup" && *smokeProbe != "renderer")) {
-		return fmt.Errorf("--smoke-probe only accepts notifications, servers, server-startup or renderer and requires --release-smoke")
+	if *smokeProbe != "" && (*smoke == "" || (*smokeProbe != "notifications" && *smokeProbe != "servers" && *smokeProbe != "server-startup" && *smokeProbe != "settings-startup" && *smokeProbe != "renderer")) {
+		return fmt.Errorf("--smoke-probe only accepts notifications, servers, server-startup, settings-startup or renderer and requires --release-smoke")
 	}
 	var smokeHistory *appupdate.ReleaseHistory
 	if *smokeHistoryPath != "" {
@@ -364,6 +364,8 @@ func runDesktop() (runErr error) {
 				go p.smokeServersOnly(*smoke, smokeResult)
 			} else if *smokeProbe == "renderer" {
 				go p.smokeRendererOnly(*smoke, smokeResult)
+			} else if *smokeProbe == "settings-startup" {
+				go p.smokeSettingsStartupOnly(*smoke, smokeResult)
 			} else if startupProbe != nil {
 				go startupProbe.run(p, *smoke, smokeResult)
 			} else {
@@ -472,7 +474,21 @@ func (p *panel) view(c *ui.Context) {
 func (p *panel) mainContent(c *ui.Context) {
 	if p.tab == "Chat" {
 		p.syncWindowChrome(c.TitleBar())
-		p.chatContent(c)
+		if p.settingsView != nil && !p.settingsFailed {
+			// Size the preloaded settings page behind chat. An unplaced WebView
+			// has a zero viewport, so revealing it would briefly show the narrow
+			// sidebar before WebKit paints the full window layout.
+			ui.Box(c).Fill().Children(func() {
+				c.Key("preloaded-settings")
+				ui.WebView(c, p.settingsView).Absolute().Top(0).Right(0).Bottom(0).Left(0).Disabled(true)
+				c.Key("chat-content")
+				ui.Box(c).Absolute().Top(0).Right(0).Bottom(0).Left(0).Background(c.Theme().Background).Children(func() {
+					p.chatContent(c)
+				})
+			})
+		} else {
+			p.chatContent(c)
+		}
 		return
 	}
 	p.syncWindowChrome(c.TitleBar())

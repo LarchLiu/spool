@@ -122,6 +122,7 @@
   background: none;
   font-size: 13px;
   color: var(--muted);
+  transition: none;
 }
 .settings-nav-group button > span:not(.update-indicator) {
   flex: 1;

@@ -7,6 +7,7 @@ import (
 	"net"
 	"testing"
 
+	"github.com/egoist/mygo"
 	"github.com/egoist/mygo/ui"
 
 	"spool/internal/workspace"
@@ -240,7 +241,7 @@ func TestSelectingNativeTabDoesNotResetChatState(t *testing.T) {
 }
 
 func TestChatLayoutReplacesNativeSidebar(t *testing.T) {
-	p := &panel{tab: "Chat", preferences: workspace.UIPreferences{Language: "en"}}
+	p := &panel{tab: "Chat", settingsView: &mygo.WebView{}, preferences: workspace.UIPreferences{Language: "en"}}
 	view := ui.NewTester(p.view, 1000, 720)
 	if !view.HasText("Opening chat…") || !view.HasText("Settings") {
 		t.Fatal("chat startup did not retain its status and settings action")
@@ -249,5 +250,13 @@ func TestChatLayoutReplacesNativeSidebar(t *testing.T) {
 		if view.HasText(text) {
 			t.Fatal("chat startup showed the native settings sidebar", text)
 		}
+	}
+	if view.WebViewAt(10, 10) != nil || view.Image().RGBAAt(10, 10).A != 255 {
+		t.Fatal("preloaded settings must stay covered while chat is opening")
+	}
+	p.chatView = &mygo.WebView{}
+	view.Frame()
+	if view.WebViewAt(10, 10) != p.chatView {
+		t.Fatal("preloaded settings intercepted the chat WebView")
 	}
 }
