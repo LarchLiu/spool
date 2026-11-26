@@ -68,6 +68,7 @@ try {
     });
     try {
       const page = await context.newPage();
+      page.setDefaultTimeout(10000);
       const errors = [],
         submissions = [];
       page.on("pageerror", (error) => errors.push(String(error)));
@@ -97,6 +98,11 @@ try {
       const chats = [
         fixture("Chat A", messages),
         fixture("Chat B", ["Other conversation"]),
+        {
+          ...fixture("Read-only chat", ["Read-only conversation"]),
+          project_id: "read-only",
+          can_control: false,
+        },
       ];
       await page.route("**/api/**", async (route) => {
         const request = route.request(),
@@ -117,9 +123,13 @@ try {
             revision: 1,
             people: [{ id: "owner", nickname: "Owner" }],
           });
+        if (endpoint === "/api/federation/agents") return json([]);
         if (endpoint === "/api/navigation")
           return json({
-            projects: [{ id: "project", name: "Project" }],
+            projects: [
+              { id: "project", name: "Project" },
+              { id: "read-only", name: "Read-only project", can_create: false },
+            ],
             chats,
           });
         const commands = ["review", "reset"].map((name) => ({
@@ -170,6 +180,11 @@ try {
       );
       const composer = page.locator("#chat-message");
       await page.getByText("Answer to Latest input", { exact: true }).waitFor();
+      const expectFocus = () =>
+        page.waitForFunction(
+          () =>
+            document.activeElement === document.getElementById("chat-message"),
+        );
       const expectValue = (expected) =>
         page.waitForFunction(
           (expected) =>
@@ -181,6 +196,10 @@ try {
           (element, [start, end]) => element.setSelectionRange(start, end),
           [start, end],
         );
+
+      await expectFocus();
+      await page.keyboard.insertText("Ready to type");
+      await expectValue("Ready to type");
 
       // Walk back without wrapping and forward to the original draft/selection.
       await composer.fill("Unsent draft");
@@ -300,9 +319,40 @@ try {
       await page
         .getByText("Answer to Other conversation", { exact: true })
         .waitFor();
+      await expectFocus();
+      await page.keyboard.insertText("Switched chat draft");
+      await expectValue("Switched chat draft");
+      await composer.fill("");
       await composer.press("ArrowUp");
       await expectValue("Other conversation");
       await composer.press("ArrowDown");
+      await expectValue("");
+
+      // Each new draft focuses the composer, even when already in a draft.
+      for (const draft of ["First new draft", "Second new draft"]) {
+        await page
+          .getByRole("button", { name: "New chat in Project", exact: true })
+          .click();
+        await expectFocus();
+        await expectValue("");
+        await page.keyboard.insertText(draft);
+        await expectValue(draft);
+      }
+
+      await page
+        .locator(".nav-chat-open")
+        .filter({ hasText: "Read-only chat" })
+        .first()
+        .click();
+      await page
+        .getByText("Answer to Read-only conversation", { exact: true })
+        .waitFor();
+      assert.equal(await composer.isDisabled(), true);
+      assert.equal(
+        await composer.evaluate(element => document.activeElement === element),
+        false,
+      );
+      await page.keyboard.insertText("Cannot edit");
       await expectValue("");
       assert.deepEqual(errors, []);
       console.log({
@@ -313,6 +363,9 @@ try {
         cursorAndIME: true,
         slashMenu: true,
         sendAndNavigation: true,
+        navigationFocus: true,
+        repeatedNewDraftFocus: true,
+        readOnlyUnfocused: true,
       });
     } finally {
       await context.close();

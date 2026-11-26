@@ -1299,6 +1299,14 @@ function App() {
     composerReady &&
     !!user &&
     (chat ? canControlChat(chat, user.id) : canCreate);
+  useEffect(() => {
+    if (!composerWritable) return;
+    // Existing chats become writable only after their snapshot has loaded.
+    const frame = requestAnimationFrame(() =>
+      document.getElementById("chat-message")?.focus({ preventScroll: true }),
+    );
+    return () => cancelAnimationFrame(frame);
+  }, [project, chatID, draftVersion, user?.id, composerWritable]);
   const remote = useRemoteAgents({
     account: user?.id || "",
     originChat: chatID,

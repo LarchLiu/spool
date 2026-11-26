@@ -150,6 +150,7 @@ public final class MainActivity extends Activity {
     private NativeAttachmentCards fileBar;
     private NestedScrollView history;
     private EditText composer, serverInput, username, password;
+    private boolean composerFocusPending;
     private NativeUi.IconButton send;
     private NativeUi.ChoiceButton modelButton, permissionButton;
     private NativeUi.Composer composerView;
@@ -590,6 +591,12 @@ public final class MainActivity extends Activity {
     private void discardComposerDrafts() {
         // Web resets the composer on navigation, not on first-send ID adoption or a rerender.
         if (remoteAgents != null) remoteAgents.reset();
+        composerFocusPending = false;
+        if (composer != null) {
+            composer.setFocusable(false);
+            ((android.view.inputmethod.InputMethodManager) getSystemService(INPUT_METHOD_SERVICE))
+                    .hideSoftInputFromWindow(composer.getWindowToken(), 0);
+        }
         composer = null;
         pickerDraft = null;
         for (Draft value : drafts.values()) { value.text = ""; value.files.clear(); }
@@ -3070,7 +3077,15 @@ public final class MainActivity extends Activity {
         composerView.commands.notice(goalNotice, () -> { goalNotice = ""; updateComposer(); });
         composerView.commands.error(goalError, () -> { goalError = ""; updateComposer(); });
         boolean editing = delivering() && editingQueue;
-        composer.setEnabled(writable() && !editing && !remoteBusy);
+        boolean enabled = writable() && !editing && !remoteBusy;
+        boolean focused = composer.hasFocus();
+        composer.setEnabled(enabled);
+        composer.setFocusable(enabled);
+        composer.setFocusableInTouchMode(enabled);
+        if (!enabled && focused)
+            ((android.view.inputmethod.InputMethodManager) getSystemService(INPUT_METHOD_SERVICE))
+                    .hideSoftInputFromWindow(composer.getWindowToken(), 0);
+        focusComposerIfRequested();
         String hint = composerHint();
         if (!TextUtils.equals(composer.getHint(), hint)) composer.setHint(hint);
         composerView.add.setEnabled(!busy && !remoteBusy && !remote && writable() && !editing);
@@ -3110,6 +3125,23 @@ public final class MainActivity extends Activity {
             modelButton.bind(remoteModel.model.isEmpty() ? ui.t("CLI default") : remoteModel.model,
                     remoteModel.backend.equals("claude") ? "claude" : "codex", ui.t("Choose agent and model"));
         }
+    }
+
+    private void focusComposerIfRequested() {
+        if (!composerFocusPending || composer == null || !composer.isEnabled() || drawer != null
+                || settingsOpen || routeLoginRequired || !foreground || destroyed) return;
+        composerFocusPending = false;
+        EditText target = composer;
+        int selected = selectionEpoch, session = authEpoch;
+        // Wait for the new page to attach; late snapshots must not focus an abandoned editor.
+        main.post(() -> {
+            if (composer != target || selected != selectionEpoch || session != authEpoch || !writable()
+                    || !target.isEnabled() || !target.isAttachedToWindow() || drawer != null
+                    || settingsOpen || routeLoginRequired || !foreground || destroyed) return;
+            if (target.requestFocus())
+                ((android.view.inputmethod.InputMethodManager) getSystemService(INPUT_METHOD_SERVICE))
+                        .showSoftInput(target, android.view.inputmethod.InputMethodManager.SHOW_IMPLICIT);
+        });
     }
 
     /** Save a parent record for direct delegation without starting a local Agent. */
@@ -3205,6 +3237,7 @@ public final class MainActivity extends Activity {
             readSessionNotification();
             render();
         }
+        if (showPage) focusComposerIfRequested();
     }
 
     private Map<String, String> serverConnectionStates() {
@@ -3420,6 +3453,7 @@ public final class MainActivity extends Activity {
         discardComposerDrafts();
         ++draftVersion;
         ++selectionEpoch;
+        composerFocusPending = true;
         stopChat();
         closeDrawer(false); sidebarPageDeferred = false;
         chatID = "";
@@ -3561,7 +3595,9 @@ public final class MainActivity extends Activity {
         sessionNotifications.dismiss(id);
         boolean deferred = sidebarPageDeferred;
         closeDrawer(false); sidebarPageDeferred = false;
+        composerFocusPending = true;
         if (deferred && id.equals(chatID)) { render(); startChat(); return; }
+        if (id.equals(chatID)) { focusComposerIfRequested(); return; }
         selectChat(id);
     }
 
@@ -3572,6 +3608,7 @@ public final class MainActivity extends Activity {
         goalNotice = goalError = "";
         discardComposerDrafts();
         ++selectionEpoch;
+        composerFocusPending = true;
         stopChat();
         chatID = id;
         for (int i = 0; i < chats.length(); i++)

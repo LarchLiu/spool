@@ -32,6 +32,8 @@ public class MainActivityNavigationTest {
                 .put("turns", turns).put("transcript", new JSONObject().put("parts", parts));
     }
     private void initialize(MainActivityGoalTest.Harness h, boolean reject) throws Exception {
+        // Remote-agent polling is unrelated to the ordered local navigation requests.
+        h.<JSONObject>get("user").put("source_server_id", "navigation-fixture"); h.call("updateComposer");
         h.set("chats", new JSONArray().put(chat("chat-one", "idle", 10)).put(chat("chat-two", "idle", 10)));
         MainActivityGoalTest.ShadowClient.responder = call -> {
             try {
@@ -100,11 +102,20 @@ public class MainActivityNavigationTest {
     @Test public void actualChatSelectionClearsTextAndAttachmentsInsteadOfRestoringPerChatDrafts() throws Exception {
         try (MainActivityGoalTest.Harness h = new MainActivityGoalTest.Harness(true)) {
             initialize(h, false); h.composer().input.setText("Old unsent draft"); attach(h);
-            select(h, "chat-two"); run(h, 0);
+            select(h, "chat-two");
+            assertFalse(h.composer().input.isEnabled()); assertFalse(h.composer().input.hasFocus());
+            assertFalse(h.composer().input.requestFocus());
+            run(h, 0);
+            assertTrue(h.composer().input.hasFocus());
             assertEquals("", h.composer().input.getText().toString()); assertEquals(0, h.composer().attachments.getChildCount());
+            assertTrue(h.composer().input.onCreateInputConnection(new EditorInfo()).commitText("Ready to type", 1));
+            assertEquals("Ready to type", h.composer().input.getText().toString());
+            while (!h.io.jobs.isEmpty()) run(h, 0);
             h.composer().input.setText("Another unsent draft"); attach(h);
             select(h, "chat-one"); run(h, 0);
+            assertTrue(h.composer().input.hasFocus());
             assertEquals("", h.composer().input.getText().toString()); assertEquals(0, h.composer().attachments.getChildCount());
+            while (!h.io.jobs.isEmpty()) run(h, 0);
             select(h, "chat-two"); run(h, 0);
             assertEquals("", h.composer().input.getText().toString()); assertEquals(0, h.composer().attachments.getChildCount());
         }
@@ -114,12 +125,57 @@ public class MainActivityNavigationTest {
         try (MainActivityGoalTest.Harness h = new MainActivityGoalTest.Harness(false)) {
             initialize(h, false); h.composer().input.setText("Unsent new conversation"); attach(h);
             newChat(h);
+            Shadows.shadowOf(Looper.getMainLooper()).idle();
+            assertTrue(h.composer().input.hasFocus());
             assertEquals("", h.<String>get("chatID")); assertNull(h.get("chat"));
             assertEquals("", h.composer().input.getText().toString()); assertEquals(0, h.composer().attachments.getChildCount());
             while (!h.io.jobs.isEmpty()) run(h, 0);
             h.composer().input.setText("Second new draft"); attach(h); newChat(h);
+            Shadows.shadowOf(Looper.getMainLooper()).idle();
+            assertTrue(h.composer().input.hasFocus());
             assertEquals("", h.composer().input.getText().toString()); assertEquals(0, h.composer().attachments.getChildCount());
             while (!h.io.jobs.isEmpty()) run(h, 0);
+        }
+    }
+
+    @Test public void readOnlyProjectsAndChatsNeverFocusTheComposerOrOpenTheKeyboard() throws Exception {
+        try (MainActivityGoalTest.Harness h = new MainActivityGoalTest.Harness(true)) {
+            initialize(h, false); newChat(h); Shadows.shadowOf(Looper.getMainLooper()).idle();
+            assertTrue(h.composer().input.hasFocus());
+            while (!h.io.jobs.isEmpty()) run(h, 0);
+            select(h, "chat-two");
+            MainActivityGoalTest.ShadowClient.responder = call -> {
+                try { return envelope(200, chat("chat-two", "idle", 10).put("can_control", false)); }
+                catch (Exception error) { throw new AssertionError(error); }
+            };
+            run(h, 0);
+            assertFalse(h.composer().input.isEnabled()); assertFalse(h.composer().input.hasFocus());
+            assertFalse(h.composer().input.requestFocus());
+            h.set("projects", new JSONArray().put(new JSONObject().put("id", "project-one").put("name", "Project").put("can_create", false)));
+            newChat(h); Shadows.shadowOf(Looper.getMainLooper()).idle();
+            assertFalse(h.composer().input.isEnabled()); assertFalse(h.composer().input.hasFocus());
+            assertFalse(h.composer().input.requestFocus());
+            android.view.inputmethod.InputMethodManager keyboard = (android.view.inputmethod.InputMethodManager)
+                    h.activity.getSystemService(android.content.Context.INPUT_METHOD_SERVICE);
+            assertFalse(Shadows.shadowOf(keyboard).isSoftInputVisible());
+        }
+    }
+
+    @Test public void revokingWriteAccessCancelsQueuedFocusAndRemovesExistingEditorFocus() throws Exception {
+        try (MainActivityGoalTest.Harness h = new MainActivityGoalTest.Harness(false)) {
+            initialize(h, false); newChat(h);
+            h.<JSONArray>get("projects").getJSONObject(0).put("can_create", false); h.call("updateComposer");
+            Shadows.shadowOf(Looper.getMainLooper()).idle();
+            assertFalse(h.composer().input.hasFocus()); assertFalse(h.composer().input.requestFocus());
+            h.<JSONArray>get("projects").getJSONObject(0).put("can_create", true); newChat(h);
+            Shadows.shadowOf(Looper.getMainLooper()).idle();
+            assertTrue(h.composer().input.hasFocus());
+            android.view.inputmethod.InputMethodManager keyboard = (android.view.inputmethod.InputMethodManager)
+                    h.activity.getSystemService(android.content.Context.INPUT_METHOD_SERVICE);
+            assertTrue(Shadows.shadowOf(keyboard).isSoftInputVisible());
+            h.<JSONArray>get("projects").getJSONObject(0).put("can_create", false); h.call("updateComposer");
+            assertFalse(h.composer().input.hasFocus()); assertFalse(h.composer().input.requestFocus());
+            assertFalse(Shadows.shadowOf(keyboard).isSoftInputVisible());
         }
     }
 
