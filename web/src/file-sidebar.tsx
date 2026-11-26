@@ -8,7 +8,7 @@ import {
   type CSSProperties,
 } from "react";
 import { FileTree, useFileTree, useFileTreeSearch } from "@pierre/trees/react";
-import { Download, File, ListTree, GitBranch, LoaderCircle, RefreshCw, X } from "lucide-react";
+import { Download, File, FolderTree, GitBranch, LoaderCircle, RefreshCw, X } from "lucide-react";
 import { api, APIError } from "./api";
 import type { Translator } from "./i18n";
 import type {
@@ -386,7 +386,7 @@ function ProjectFiles({
         onClose={onClose}
       />
       <FilePanelTabs variant="underline" label={t("Project panels")} value={panel} onChange={onSelectPanel} options={[
-        { value: "project", label: t("Project panel"), icon: <ListTree size={14} /> },
+        { value: "project", label: t("Project panel"), icon: <FolderTree size={14} /> },
         { value: "git", label: t("Git panel"), icon: <GitBranch size={14} /> },
       ]} />
       {panel === "git" && <GitPanel base={fileAPIBase(project.id, chatID).slice(4)} scope={directoryScope} workspace={chatID ? workspacePath : undefined}

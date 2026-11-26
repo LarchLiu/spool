@@ -30,7 +30,7 @@ const icons = {
   menu:'Menu', close:'X', back:'ArrowLeft', send:'ArrowUp', stop:'Square', arrow_down:'ArrowDown', arrow_up:'ArrowUp',
   more:'Ellipsis', grip_vertical:'GripVertical', list_end:'ListEnd', corner_down_right:'CornerDownRight', pencil:'Pencil', archive:'Archive', trash:'Trash2', pin:'Pin', pin_off:'PinOff',
   files_close:'PanelRightClose', file:'File', info:'Info', folder_git:'FolderGit2', git_branch:'GitBranch', git_commit:'GitCommitHorizontal', tag:'Tag',
-  plus:'Plus', folder:'Folder', folder_open:'FolderOpen', files:'PanelRightOpen', file_list:'ListTree',
+  plus:'Plus', folder:'Folder', folder_open:'FolderOpen', files:'PanelRightOpen', file_list:'FolderTree',
   project_folder:'Folder', project_folder_open:'FolderOpen',
   people:'Users', user_plus:'UserPlus', attach:'Paperclip', settings:'Settings2', file_text:'FileText',
   file_code:'FileCode2', chevron_down:'ChevronDown', chevron_up:'ChevronUp',
