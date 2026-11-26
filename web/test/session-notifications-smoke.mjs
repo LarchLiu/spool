@@ -47,6 +47,8 @@ const server = await createTestViteServer(
   },
 );
 const user = "user-12345678";
+const now = new Date(2026, 10, 26, 12, 34);
+const ageMinutes = [0, 120, 4_320, 86_400, 1, 1_051_200];
 const chats = [
   "current",
   "completed",
@@ -61,7 +63,7 @@ const chats = [
   user_id: user,
   backend: "codex",
   status: name === "running" ? "running" : "idle",
-  updated_at: 10 - index,
+  updated_at: now.getTime() - ageMinutes[index] * 60_000,
   can_control: true,
   turns: [],
   transcript: { parts: [] },
@@ -91,6 +93,7 @@ try {
         });
         try {
           const page = await context.newPage();
+          await page.clock.install({ time: now });
           page.setDefaultTimeout(10000);
           const errors = [];
           page.on("pageerror", (error) => errors.push(String(error)));
@@ -200,6 +203,7 @@ try {
               return json({
                 projects,
                 chats,
+                sidebar: { revision: 1, pinned: [chats[0].id] },
               });
             if (endpoint === "/api/agents")
               return json([
@@ -256,6 +260,65 @@ try {
                 hasText: new RegExp(`^${title}$`),
               }),
             });
+          const expectAge = async (title, label) => {
+            const time = row(title).locator(".nav-chat-time");
+            await page.waitForFunction(
+              ({ title, label }) =>
+                [...document.querySelectorAll(".recents .nav-chat")].some(
+                  (row) =>
+                    row.querySelector(".nav-chat-title")?.textContent ===
+                      title &&
+                    row.querySelector(".nav-chat-time")?.textContent === label,
+                ),
+              { title, label },
+            );
+            return time;
+          };
+          await page.mouse.move(1100, 850);
+          const currentAge = await expectAge("current", "now");
+          await expectAge("completed", "2h");
+          await expectAge("failed", "3d");
+          await expectAge("approval", "2mo");
+          assert.equal(
+            await row("running").locator(".nav-chat-time").count(),
+            0,
+          );
+          for (const section of ["pinned", "projects", "recents"]) {
+            const time = page
+              .locator(`.${section} .nav-chat`)
+              .filter({
+                has: page.locator(".nav-chat-title", { hasText: /^current$/ }),
+              })
+              .locator(".nav-chat-time");
+            assert.equal(await time.textContent(), "now");
+            assert.ok(await time.isVisible());
+          }
+          const timeBounds = await currentAge.boundingBox();
+          const titleBounds = await row("current")
+            .locator(".nav-chat-title")
+            .boundingBox();
+          const rowBounds = await row("current").boundingBox();
+          assert.ok(
+            titleBounds.x + titleBounds.width <= timeBounds.x &&
+              timeBounds.x + timeBounds.width <= rowBounds.x + rowBounds.width,
+          );
+          await page.screenshot({
+            path: path.join(output, `${engine}-${mode}-ages.png`),
+          });
+          await row("current").hover();
+          assert.equal(
+            await currentAge.isVisible(),
+            false,
+            "Hover hides the age to make room for row actions",
+          );
+          assert.ok(
+            await row("current")
+              .getByRole("button", { name: "Unpin chat", exact: true })
+              .isVisible(),
+          );
+          assert.deepEqual(await row("current").boundingBox(), rowBounds);
+          await page.mouse.move(1100, 850);
+          assert.ok(await currentAge.isVisible());
           const expectStatus = async (title, kind) => {
             await page.waitForFunction(
               ({ title, kind }) => {
@@ -274,6 +337,12 @@ try {
               },
               { title, kind },
             );
+            if (kind)
+              assert.equal(
+                await row(title).locator(".nav-chat-time").count(),
+                0,
+                "Unread states replace the age",
+              );
           };
           const notify = (
             chat,
@@ -393,6 +462,7 @@ try {
             });
           await row("completed").locator(".nav-chat-open").click();
           await expectStatus("completed", "");
+          await expectAge("completed", "2h");
           assert.equal(
             await summary.count(),
             0,
@@ -407,6 +477,7 @@ try {
           await expectStatus("hidden-completed", "completed");
           await row("hidden-completed").locator(".nav-chat-open").click();
           await expectStatus("hidden-completed", "");
+          await expectAge("hidden-completed", "2y");
           await toggleProject.click();
           await expectProjectStatuses(["approval", "failed"]);
           await row("completed").locator(".nav-chat-open").click();
@@ -495,11 +566,15 @@ try {
             { projects, chats },
           );
           await expectProjectStatuses(["approval", "failed"], false);
+          await expectAge("running", "1m");
           assert.equal(
             await toggleProject.getAttribute("aria-expanded"),
             "false",
             "Live updates do not reopen a collapsed project",
           );
+          await page.clock.fastForward(60_000);
+          await expectAge("current", "1m");
+          await expectAge("running", "2m");
           assert.deepEqual(errors, []);
           reports.push({
             engine,
@@ -508,6 +583,8 @@ try {
             accountIsolation: true,
             readState: true,
             collapsedProjectStatuses: true,
+            relativeAges: true,
+            hoverHidesAge: true,
           });
           console.log(`${engine}/${mode}: session notifications passed`);
         } finally {

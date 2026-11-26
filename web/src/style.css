@@ -422,6 +422,18 @@ button:disabled {
   width: 16px;
   height: 16px;
 }
+.nav-chat-time {
+  flex-shrink: 0;
+  color: var(--muted);
+  font-size: 11px;
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+}
+.nav-chat:hover .nav-chat-time,
+.nav-chat:has(:focus-visible) .nav-chat-time,
+.nav-chat.menu-open .nav-chat-time {
+  display: none;
+}
 .session-notification-icon {
   display: grid;
   place-items: center;

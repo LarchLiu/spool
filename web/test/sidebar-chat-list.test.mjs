@@ -5,6 +5,7 @@ import { renderToStaticMarkup } from "react-dom/server";
 import {
   INITIAL_CHAT_LIMIT,
   SidebarChatList,
+  SidebarChatTime,
 } from "../.test-build/components/web/src/sidebar-chat-list.js";
 import {
   sortedSidebarChats,
@@ -12,7 +13,50 @@ import {
   revealSidebarChat,
   parseSidebarPreferences,
   pinnedSidebarChats,
+  sidebarChatAge,
 } from "../.test-build/components/web/src/sidebar-state.js";
+
+test("conversation ages use now, minutes, hours, days, months and years at each boundary", () => {
+  const now = Date.UTC(2026, 10, 26, 12);
+  const minute = 60_000;
+  for (const [elapsed, label] of [
+    [-minute, "now"],
+    [0, "now"],
+    [minute - 1, "now"],
+    [minute, "1m"],
+    [60 * minute - 1, "59m"],
+    [60 * minute, "1h"],
+    [1_440 * minute - 1, "23h"],
+    [1_440 * minute, "1d"],
+    [43_200 * minute - 1, "29d"],
+    [43_200 * minute, "1mo"],
+    [525_600 * minute - 1, "12mo"],
+    [525_600 * minute, "1y"],
+    [2 * 525_600 * minute, "2y"],
+  ]) {
+    assert.equal(sidebarChatAge(now - elapsed, now), label);
+  }
+});
+
+test("conversation age labels keep the full localized timestamp accessible and omit invalid times", () => {
+  const now = Date.UTC(2026, 10, 26, 12);
+  const timestamp = now - 2 * 60_000;
+  const render = (timestamp, locale = "en", current = now) =>
+    renderToStaticMarkup(
+      createElement(SidebarChatTime, { timestamp, now: current, locale }),
+    );
+  for (const locale of ["en", "zh-CN", "ja"]) {
+    const html = render(timestamp, locale);
+    const title = new Date(timestamp).toLocaleString(locale, { hour12: false });
+    assert.match(html, /<time[^>]*>2m<\/time>/);
+    assert.ok(html.includes(`dateTime="${new Date(timestamp).toISOString()}"`));
+    assert.ok(html.includes(`title="${title}"`));
+    assert.ok(html.includes(`aria-label="${title}"`));
+  }
+  for (const timestamp of [undefined, 0, -1, NaN, Infinity, 1e20])
+    assert.equal(render(timestamp), "");
+  assert.equal(render(timestamp, "en", NaN), "");
+});
 
 test("sidebar preferences validate stored pins and restore each section independently", () => {
   const defaults = { pinned: [], collapsed: { pinned: false, projects: false, recents: false } };

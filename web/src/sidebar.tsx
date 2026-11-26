@@ -40,7 +40,11 @@ import {
   type SidebarSection as Section,
 } from "./sidebar-state";
 import { SidebarSection } from "./sidebar-section";
-import { INITIAL_CHAT_LIMIT, SidebarChatList } from "./sidebar-chat-list";
+import {
+  INITIAL_CHAT_LIMIT,
+  SidebarChatList,
+  SidebarChatTime,
+} from "./sidebar-chat-list";
 import { SessionNotificationIcon } from "./session-notification-icon";
 import { ProjectChatStatus } from "./project-chat-status";
 import type { SessionNotifications } from "./use-session-notifications";
@@ -95,6 +99,20 @@ export function Sidebar(props: Props) {
   const [projectLimit, setProjectLimit] = useState(5);
   const [recentLimit, setRecentLimit] = useState(INITIAL_CHAT_LIMIT);
   const [chatLimits, setChatLimits] = useState<Record<string, number>>({});
+  const [now, setNow] = useState(Date.now);
+  useEffect(() => {
+    if (!props.active) return;
+    const refresh = () => setNow(Date.now());
+    refresh();
+    const timer = window.setInterval(refresh, 60_000);
+    window.addEventListener("focus", refresh);
+    document.addEventListener("visibilitychange", refresh);
+    return () => {
+      window.clearInterval(timer);
+      window.removeEventListener("focus", refresh);
+      document.removeEventListener("visibilitychange", refresh);
+    };
+  }, [props.active]);
   const byProject = useMemo(() => {
     const groups = new Map<string, Chat[]>();
     for (const chat of chats) {
@@ -128,6 +146,7 @@ export function Sidebar(props: Props) {
     const title = chat.title === "New chat" ? t("New chat") : chat.title;
     const pinned = props.pinned.includes(chat.id);
     const canManage = canControlChat(chat, props.user?.id || "");
+    const notification = props.notifications[chat.id];
     const backend =
       chat.id === chatID && props.activeBackend
         ? props.activeBackend
@@ -232,10 +251,15 @@ export function Sidebar(props: Props) {
                 </button>
               )}
             </div>
-            <SessionNotificationIcon
-              kind={props.notifications[chat.id]}
-              t={t}
-            />
+            {notification ? (
+              <SessionNotificationIcon kind={notification} t={t} />
+            ) : chat.status !== "running" ? (
+              <SidebarChatTime
+                timestamp={chat.updated_at}
+                now={now}
+                locale={props.locale}
+              />
+            ) : null}
           </div>
         )}
       </ChatActionMenu>
