@@ -147,6 +147,33 @@ public class MainActivityRefreshTest {
         }
     }
 
+    @Test public void truncatedSuccessfulResponsesRetainChatAndDraftUntilTheNextValidPoll() throws Exception {
+        try (MainActivityGoalTest.Harness h = new MainActivityGoalTest.Harness(true)) {
+            JSONObject running = chat("running", 20);
+            h.set("chat", running); h.set("chats", new JSONArray().put(NativeChatState.copy(running)));
+            h.call("renderChat"); Shadows.shadowOf(Looper.getMainLooper()).idle();
+            JSONObject previous = h.get("chat"); View root = h.get("root");
+            NativeUi.Composer editor = h.composer(); editor.input.setText("Keep my unsent draft");
+            for (String body : new String[] {"{\"id\":\"chat-one\",\"turns\":[", "", "{\"transcript\":{"}) {
+                MainActivityGoalTest.ShadowClient.response = new JSONObject().put("status", 200).put("body", body).toString();
+                runPendingPolls(h);
+                assertSame(previous, h.get("chat")); assertSame(root, h.get("root"));
+                assertSame(editor, h.composer()); assertEquals("Keep my unsent draft", editor.input.getText().toString());
+                assertNotNull(h.get("user")); tick();
+            }
+            MainActivityGoalTest.ShadowClient.response = envelope(200, chat("completed", 30)); runPendingPolls(h);
+            assertEquals("completed", h.<JSONObject>get("chat").getString("status"));
+            assertSame(editor, h.composer()); assertEquals("Keep my unsent draft", editor.input.getText().toString());
+        }
+    }
+
+    private void runPendingPolls(MainActivityGoalTest.Harness h) {
+        assertFalse("A running chat must keep polling after a failed response", h.refreshIO.jobs.isEmpty());
+        List<Runnable> pending = new java.util.ArrayList<>(h.refreshIO.jobs); h.refreshIO.jobs.clear();
+        for (Runnable request : pending) request.run();
+        Shadows.shadowOf(Looper.getMainLooper()).idle();
+    }
+
     @Test public void sessionRebindingSkipsQueuedOldReadsAndAnyRunningTurnEnablesRefresh() throws Exception {
         try (MainActivityGoalTest.Harness h = new MainActivityGoalTest.Harness(true)) {
             start(h); h.set("authEpoch", h.<Integer>get("authEpoch") + 1); h.set("csrf", "new-csrf"); h.call("render");

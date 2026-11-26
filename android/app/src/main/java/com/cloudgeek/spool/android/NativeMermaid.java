@@ -4,6 +4,7 @@ import android.annotation.SuppressLint;
 import android.graphics.Color;
 import android.view.View;
 import android.webkit.JavascriptInterface;
+import android.webkit.RenderProcessGoneDetail;
 import android.webkit.WebResourceError;
 import android.webkit.WebResourceRequest;
 import android.webkit.WebResourceResponse;
@@ -25,7 +26,7 @@ final class NativeMermaid extends FrameLayout {
     private WebView browser;
     private String source = "";
     private int generation;
-    private boolean loaded;
+    private boolean loaded, rendererFailed;
     private final Runnable render = this::render;
 
     NativeMermaid(NativeUi ui, Result result) {
@@ -40,7 +41,7 @@ final class NativeMermaid extends FrameLayout {
     void bind(String value) {
         if (source.equals(value)) return;
         source = value; generation++;
-        result.rendered(State.LOADING, 0); setAlpha(0);
+        result.rendered(rendererFailed ? State.ERROR : State.LOADING, 0); setAlpha(0);
         removeCallbacks(render);
         if (loaded) postDelayed(render, 120);
     }
@@ -48,6 +49,7 @@ final class NativeMermaid extends FrameLayout {
     @SuppressLint("SetJavaScriptEnabled")
     private void start() {
         if (browser != null) return;
+        rendererFailed = false;
         WebView view = new WebView(ui.context);
         browser = view;
         view.setBackgroundColor(Color.TRANSPARENT);
@@ -73,6 +75,16 @@ final class NativeMermaid extends FrameLayout {
             }
             @Override public void onReceivedError(WebView ignored, WebResourceRequest request, WebResourceError error) {
                 if (request.isForMainFrame()) failed(view);
+            }
+            @Override public boolean onRenderProcessGone(WebView ignored, RenderProcessGoneDetail detail) {
+                if (browser == view) {
+                    // Android otherwise terminates the host process too. Keep
+                    // the native workspace mounted and expose the diagram source.
+                    browser = null; loaded = false; rendererFailed = true; generation++;
+                    removeCallbacks(render); removeView(view); view.destroy();
+                    setAlpha(0); result.rendered(State.ERROR, 0);
+                }
+                return true;
             }
         });
         addView(view, new LayoutParams(-1, expanded ? -1 : ui.dp(240)));

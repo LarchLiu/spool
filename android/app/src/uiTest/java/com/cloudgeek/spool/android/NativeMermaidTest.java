@@ -167,4 +167,61 @@ public class NativeMermaidTest {
             assertEquals(View.GONE, block.scroll.getVisibility());
         }
     }
+
+    @Test public void rendererExitKeepsWorkspaceAndSourceUsableAndIgnoresLateDiagramCallbacks() throws Exception {
+        try (ActivityController<Activity> controller = Robolectric.buildActivity(Activity.class).setup()) {
+            NativeUi ui = new NativeUi(controller.get(), false, "en");
+            LinearLayout workspace = ui.column();
+            android.widget.EditText draft = new android.widget.EditText(ui.context);
+            draft.setText("Keep my unsent draft"); workspace.addView(draft);
+            NativeCodeBlock block = new NativeCodeBlock(ui, ui.text, 14);
+            String source = "flowchart LR\n A --> B";
+            block.bind("mermaid", source); workspace.addView(block);
+            controller.get().setContentView(workspace);
+            WebView first = browser(block); ShadowWebView shadow = Shadows.shadowOf(first);
+            Object oldBridge = shadow.getJavascriptInterface("SpoolMermaid");
+            complete(oldBridge, 1, true, 180);
+            assertEquals(View.GONE, block.scroll.getVisibility());
+            block.enlarge.performClick(); Shadows.shadowOf(Looper.getMainLooper()).idle();
+            NativeMermaidPreview preview = block.preview;
+            WebView full = (WebView) preview.diagram.getChildAt(0);
+            ShadowWebView fullShadow = Shadows.shadowOf(full);
+            Object fullBridge = fullShadow.getJavascriptInterface("SpoolMermaid");
+            complete(fullBridge, 1, true, 400);
+
+            // Every WebView sharing a terminated renderer must handle its own exit.
+            assertTrue(shadow.getWebViewClient().onRenderProcessGone(first, null));
+            assertTrue(fullShadow.getWebViewClient().onRenderProcessGone(full, null));
+            Shadows.shadowOf(Looper.getMainLooper()).idle();
+            assertTrue(shadow.wasDestroyCalled()); assertTrue(fullShadow.wasDestroyCalled());
+            assertEquals(0, ((NativeMermaid) block.getChildAt(2)).getChildCount());
+            assertEquals(View.VISIBLE, block.scroll.getVisibility());
+            assertEquals(source, block.code.getText().toString());
+            assertEquals(View.VISIBLE, preview.fallback.getVisibility());
+            assertFalse(preview.zoomIn.isEnabled());
+            assertSame(workspace, block.getParent());
+            assertEquals("Keep my unsent draft", draft.getText().toString());
+            complete(oldBridge, 1, true, 180); complete(fullBridge, 1, true, 400);
+            assertEquals(View.VISIBLE, block.scroll.getVisibility());
+            assertEquals(View.VISIBLE, preview.fallback.getVisibility());
+            preview.close.performClick();
+            block.copy.performClick();
+            ClipboardManager clipboard = (ClipboardManager) ui.context.getSystemService(Context.CLIPBOARD_SERVICE);
+            assertEquals(source, clipboard.getPrimaryClip().getItemAt(0).getText().toString());
+
+            String nextSource = "flowchart LR\n B --> C";
+            block.bind("mermaid", nextSource);
+            assertEquals(nextSource, block.code.getText().toString());
+            assertEquals(View.VISIBLE, block.scroll.getVisibility());
+            assertEquals(0, ((NativeMermaid) block.getChildAt(2)).getChildCount());
+            workspace.removeView(block); workspace.addView(block);
+            WebView next = browser(block); assertNotSame(first, next);
+            ShadowWebView current = Shadows.shadowOf(next);
+            current.getWebViewClient().onPageFinished(next, current.getLastLoadedUrl());
+            Shadows.shadowOf(Looper.getMainLooper()).idleFor(Duration.ofMillis(120));
+            assertTrue(current.getLastEvaluatedJavascript().endsWith(",false,4,false)"));
+            complete(current.getJavascriptInterface("SpoolMermaid"), 4, true, 180);
+            assertEquals(View.GONE, block.scroll.getVisibility());
+        }
+    }
 }
