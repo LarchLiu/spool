@@ -1436,5 +1436,18 @@
   "Invalid connection mode.": "Invalid connection mode.",
   "Configure the selected connection before connecting.": "Configure the selected connection before connecting.",
   "Trust direction": "Trust direction",
-  "Waiting to sync revocation": "Waiting to sync revocation"
+  "Waiting to sync revocation": "Waiting to sync revocation",
+  "Allow file uploads": "Allow file uploads",
+  "Upload files": "Upload files",
+  "Project file actions": "Project file actions",
+  "Upload to {path}": "Upload to {path}",
+  "Uploading {name}…": "Uploading {name}…",
+  "Uploaded {count} files to {path}": "Uploaded {count} files to {path}",
+  "File upload permission is disabled": "File upload permission is disabled",
+  "Invalid file upload": "Invalid file upload",
+  "Invalid upload filename": "Invalid upload filename",
+  "Each uploaded file must be at most 64 MB": "Each uploaded file must be at most 64 MB",
+  "Could not save uploaded file": "Could not save uploaded file",
+  "Upload one file per request": "Upload one file per request",
+  "A file with this name already exists": "A file with this name already exists"
 }

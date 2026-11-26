@@ -316,6 +316,22 @@ export function ProjectsPage({ data, run, t }: PageProps) {
                         ))}
                       </div>
                     </div>
+                    <div className="settings-member-permission">
+                      <span>{t("Allow file uploads")}</span>
+                      <Toggle
+                        label={`${userName(person)} · ${t("Allow file uploads")}`}
+                        value={draft.member_upload[person.id] === true}
+                        onChange={(enabled) =>
+                          setDraft((old) => ({
+                            ...old,
+                            member_upload: {
+                              ...old.member_upload,
+                              [person.id]: enabled,
+                            },
+                          }))
+                        }
+                      />
+                    </div>
                   </div>
                 )}
                 <Toggle

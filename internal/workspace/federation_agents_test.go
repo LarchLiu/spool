@@ -44,7 +44,7 @@ func remoteFixtureForTest(t *testing.T, runner agent.AgentRunner) remoteFixture 
 		}
 	}
 	peer := federationPairForTest(t, sa, sb, bs.URL, false, []string{u.ID}, nil)
-	federationPairForTest(t, sb, sa, as.URL, true, nil, []FederationProject{{project.ID, "control", "create"}})
+	federationPairForTest(t, sb, sa, as.URL, true, nil, []FederationProject{{ID: project.ID, Access: "control", OwnAccess: "create"}})
 	testAgent(t, sb)
 	_, identity, err := sa.login(u.Username, "test-password-2026")
 	if err != nil {

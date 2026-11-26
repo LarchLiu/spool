@@ -154,25 +154,25 @@ func TestSettingsActionIsSeparateFromMutationReloads(t *testing.T) {
 }
 
 func TestManagementDTOsDoNotChangeChatAPIProjection(t *testing.T) {
-	project := workspace.Project{ID: "project", Name: "Demo", Path: "/private/project", Members: []string{"person"}, MemberAccess: map[string]string{"person": "read-only"}, MemberOwnAccess: map[string]string{"person": "read-only"}, Issues: workspace.IssuesAutomation{Enabled: true}}
+	project := workspace.Project{ID: "project", Name: "Demo", Path: "/private/project", Members: []string{"person"}, MemberAccess: map[string]string{"person": "read-only"}, MemberOwnAccess: map[string]string{"person": "read-only"}, MemberUpload: map[string]bool{"person": true}, Issues: workspace.IssuesAutomation{Enabled: true}}
 	agent := workspace.AgentInfo{Executable: "/private/agent", ResolvedPath: "/private/resolved"}
 	public, err := json.Marshal([]any{project, agent})
 	if err != nil {
 		t.Fatal(err)
 	}
-	for _, secret := range []string{"/private/", `"members"`, `"member_access"`, `"member_own_access"`, `"issues"`, `"executable"`, `"resolved_path"`} {
+	for _, secret := range []string{"/private/", `"members"`, `"member_access"`, `"member_own_access"`, `"member_upload"`, `"issues"`, `"executable"`, `"resolved_path"`} {
 		if strings.Contains(string(public), secret) {
 			t.Fatalf("chat projection exposes %s: %s", secret, public)
 		}
 	}
 	private, err := json.Marshal([]any{
-		settingsProject{Project: project, Path: project.Path, Members: project.Members, MemberAccess: project.MemberAccess, MemberOwnAccess: project.MemberOwnAccess, Issues: project.Issues},
+		settingsProject{Project: project, Path: project.Path, Members: project.Members, MemberAccess: project.MemberAccess, MemberOwnAccess: project.MemberOwnAccess, MemberUpload: project.MemberUpload, Issues: project.Issues},
 		settingsAgent{AgentInfo: agent, Executable: agent.Executable, ResolvedPath: agent.ResolvedPath},
 	})
 	if err != nil {
 		t.Fatal(err)
 	}
-	for _, key := range []string{`"path":"/private/project"`, `"members":["person"]`, `"member_access":{"person":"read-only"}`, `"member_own_access":{"person":"read-only"}`, `"issues":`, `"executable":"/private/agent"`, `"resolved_path":"/private/resolved"`} {
+	for _, key := range []string{`"path":"/private/project"`, `"members":["person"]`, `"member_access":{"person":"read-only"}`, `"member_own_access":{"person":"read-only"}`, `"member_upload":{"person":true}`, `"issues":`, `"executable":"/private/agent"`, `"resolved_path":"/private/resolved"`} {
 		if !strings.Contains(string(private), key) {
 			t.Fatalf("management projection missing %s: %s", key, private)
 		}
@@ -181,11 +181,11 @@ func TestManagementDTOsDoNotChangeChatAPIProjection(t *testing.T) {
 
 func TestSettingsCommandDecodesPrivateProjectFields(t *testing.T) {
 	var command settingsCommand
-	err := json.Unmarshal([]byte(`{"kind":"save-project","project":{"id":"one","name":"Project","path":"/tmp/project","members":["person"],"member_access":{"person":"read-only"},"member_own_access":{"person":"read-only"},"shared_chats":true,"issues":{"enabled":true,"interval_minutes":60,"backend":"codex","user_id":"person","assignee_ids":["person"],"labels":["bug"]}}}`), &command)
+	err := json.Unmarshal([]byte(`{"kind":"save-project","project":{"id":"one","name":"Project","path":"/tmp/project","members":["person"],"member_access":{"person":"read-only"},"member_own_access":{"person":"read-only"},"member_upload":{"person":true},"shared_chats":true,"issues":{"enabled":true,"interval_minutes":60,"backend":"codex","user_id":"person","assignee_ids":["person"],"labels":["bug"]}}}`), &command)
 	if err != nil {
 		t.Fatal(err)
 	}
-	if command.Project.ID != "one" || command.Project.Path != "/tmp/project" || !command.Project.SharedChats || command.Project.MemberAccess["person"] != "read-only" || command.Project.MemberOwnAccess["person"] != "read-only" || len(command.Project.Members) != 1 || !command.Project.Issues.Enabled {
+	if command.Project.ID != "one" || command.Project.Path != "/tmp/project" || !command.Project.SharedChats || command.Project.MemberAccess["person"] != "read-only" || command.Project.MemberOwnAccess["person"] != "read-only" || !command.Project.MemberUpload["person"] || len(command.Project.Members) != 1 || !command.Project.Issues.Enabled {
 		t.Fatalf("lost management fields: %+v", command)
 	}
 }

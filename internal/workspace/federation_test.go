@@ -47,10 +47,10 @@ func TestFederationExchangeUsesTargetMembershipAndRevokes(t *testing.T) {
 	}
 	pendingTrust := submitTrustForTest(t, source, target, bs.URL)
 	policy := FederationTrustApproval{Transport: "https", Address: as.URL, Projects: []FederationProject{
-		{project.ID, "read-only", "create"}, {project2.ID, "control", "read-only"},
+		{ID: project.ID, Access: "read-only", OwnAccess: "create"}, {ID: project2.ID, Access: "control", OwnAccess: "read-only"},
 	}}
 	invalid := policy
-	invalid.Projects = []FederationProject{{"missing-project", "read-only", "read-only"}}
+	invalid.Projects = []FederationProject{{ID: "missing-project", Access: "read-only", OwnAccess: "read-only"}}
 	if err := sb.DecideFederationTrust(pendingTrust.ID, true, invalid); err == nil {
 		t.Fatal("approval accepted an unknown default project")
 	}

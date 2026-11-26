@@ -889,6 +889,10 @@ func (p *panel) projectView(c *ui.Context) {
 				for id, access := range project.MemberOwnAccess {
 					p.project.MemberOwnAccess[id] = access
 				}
+				p.project.MemberUpload = map[string]bool{}
+				for id, enabled := range project.MemberUpload {
+					p.project.MemberUpload[id] = enabled
+				}
 				p.project.Issues.Labels = project.Issues.IssueLabels()
 				p.issueLabel = ""
 				p.issueInterval = strconv.Itoa(project.Issues.IntervalMinutes)
@@ -924,6 +928,9 @@ func (p *panel) projectView(c *ui.Context) {
 			if p.project.MemberOwnAccess == nil {
 				p.project.MemberOwnAccess = map[string]string{}
 			}
+			if p.project.MemberUpload == nil {
+				p.project.MemberUpload = map[string]bool{}
+			}
 			ui.Text(c, p.tr("In-app permissions")).FontSize(12)
 			ui.Row(c).Gap(8).Children(func() {
 				if ui.Button(c, p.tr("Read-only")).Disabled(p.project.MemberOwnAccess[u.ID] == "read-only").Clicked() {
@@ -942,9 +949,13 @@ func (p *panel) projectView(c *ui.Context) {
 					p.project.MemberAccess[u.ID] = "control"
 				}
 			})
+			upload := p.project.MemberUpload[u.ID]
+			ui.Checkbox(c, &upload, p.tr("Allow file uploads"))
+			p.project.MemberUpload[u.ID] = upload
 		} else {
 			delete(p.project.MemberAccess, u.ID)
 			delete(p.project.MemberOwnAccess, u.ID)
+			delete(p.project.MemberUpload, u.ID)
 		}
 	}
 	ui.Text(c, p.tr("In-app permissions: read-only allows viewing existing chats; Can create also allows creating and controlling personal chats. Shared session permissions separately control other people's shared chats and shared local sessions. Assigned task permissions are unchanged.")).Wrap().FontSize(12)

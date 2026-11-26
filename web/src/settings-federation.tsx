@@ -47,6 +47,7 @@ type DefaultProject = {
   id: string;
   access: "read-only" | "control";
   own_access: "read-only" | "create";
+  upload?: boolean;
 };
 type TrustRequest = {
   id: string;
@@ -1169,6 +1170,14 @@ function DefaultProjects({
                       ))}
                     </div>
                   </div>
+                  <div className="settings-member-permission">
+                    <span>{t("Allow file uploads")}</span>
+                    <Toggle
+                      label={`${project.name} · ${t("Allow file uploads")}`}
+                      value={rule.upload === true}
+                      onChange={(upload) => update({ ...rule, upload })}
+                    />
+                  </div>
                 </div>
               )}
               <Toggle
@@ -1180,6 +1189,7 @@ function DefaultProjects({
                       id: project.id,
                       access: "read-only",
                       own_access: "read-only",
+                      upload: false,
                     });
                   else onChange(value.filter((item) => item.id !== project.id));
                 }}

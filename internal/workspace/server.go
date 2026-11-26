@@ -688,6 +688,14 @@ func (a *App) chatRoute(w http.ResponseWriter, r *http.Request, id authIdentity,
 		apiJSON(w, 200, transportWindow(r, a.snapshot(chat)))
 		return
 	}
+	if len(parts) == 2 && parts[1] == "upload" && r.Method == http.MethodPost {
+		if !a.store.CanUploadProject(id.User.ID, chat.ProjectID) {
+			apiError(w, 403, "File upload permission is disabled")
+			return
+		}
+		a.sessionFilesResponse(w, r, chat, "upload")
+		return
+	}
 	if len(parts) == 2 && (parts[1] == "workspace" || parts[1] == "files" || parts[1] == "file" || parts[1] == "git") && (r.Method == "GET" || r.Method == "HEAD" || parts[1] == "git" && r.Method == "POST") {
 		if r.Method == "POST" && !a.store.CanControlChat(id.User.ID, chat.ID) {
 			apiError(w, 403, "Chat is read-only")

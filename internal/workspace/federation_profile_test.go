@@ -39,7 +39,7 @@ func TestFederationCheckUpdatesProfileWithoutChangingLocalAccess(t *testing.T) {
 	alice := testUser(t, sa, "alice")
 	project := testProject(t, sb)
 	pb := federationPairForTest(t, sa, sb, "https://target.spool.test", false, []string{alice.ID}, nil)
-	pa := federationPairForTest(t, sb, sa, "https://source.spool.test", true, nil, []FederationProject{{project.ID, "control", "create"}})
+	pa := federationPairForTest(t, sb, sa, "https://source.spool.test", true, nil, []FederationProject{{ID: project.ID, Access: "control", OwnAccess: "create"}})
 	pb, err := federationPeer(sa.db, pb.ID)
 	if err != nil {
 		t.Fatal(err)

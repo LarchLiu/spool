@@ -99,6 +99,7 @@ test("new entities do not share mutable state or passwords", () => {
   assert.equal("read_only" in newPerson(), false);
   assert.deepEqual(second.member_access, {});
   assert.deepEqual(second.member_own_access, {});
+  assert.deepEqual(second.member_upload, {});
   assert.equal(second.shared_local_chats, false);
   assert.equal(second.allow_external_files, true);
 });
@@ -113,6 +114,21 @@ test("project edit drafts are independent from polling snapshots and support leg
   draft.name = "unsaved";
   assert.deepEqual(project.issues.labels, []);
   assert.equal(project.name, "");
+});
+
+test("upload permissions default off in legacy drafts and survive unrelated edits", () => {
+  const project = newProject();
+  delete project.member_upload;
+  assert.deepEqual(projectDraft(project).member_upload, {});
+  const draft = projectMembers(projectDraft(project), ["alice", "bob"]);
+  assert.deepEqual(draft.member_upload, { alice: false, bob: false });
+  draft.member_upload.alice = true;
+  const copy = projectDraft(draft);
+  copy.member_upload.alice = false;
+  assert.equal(draft.member_upload.alice, true);
+  const retained = projectMembers(draft, ["alice"]);
+  assert.deepEqual(retained.member_upload, { alice: true });
+  assert.deepEqual(projectMembers(projectMembers(draft, ["bob"]), ["alice", "bob"]).member_upload, { alice: false, bob: false });
 });
 
 test("external session files default on for legacy drafts and retain explicit opt-outs", () => {

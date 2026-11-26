@@ -129,7 +129,7 @@ automatically verified trust is managed separately and bound to its public URL.
 | `voxl status/install` | Local remote desktop helper installation, upgrades and saved enablement |
 | `user list/add/update/enable/disable` | Login accounts, password resets and remote desktop grants |
 | `project list/show/add/update/archive/unarchive` | Local directories, sharing and file access |
-| `project member set/remove` | Individual membership and shared/personal chat permissions |
+| `project member set/remove` | Individual membership, shared/personal chat permissions and file upload grants |
 | `agent list/set/refresh` | Codex/Claude enablement, executable paths and discovery |
 | `github show/set/check` | GitHub CLI override and authentication check |
 | `issues show/set` | Per-project Issue automation and last-run diagnostics |
@@ -138,7 +138,8 @@ automatically verified trust is managed separately and bound to its public URL.
 
 Use command help for every available option and its defaults. Project selectors
 accept an ID or an unambiguous name. User selectors accept a username or ID.
-`project list` includes local paths, member IDs and both permission maps.
+`project list` includes local paths, member IDs and the `member_access`,
+`member_own_access` and `member_upload` permission maps.
 Account edits revoke existing login sessions; disabling retains history.
 Archiving a project retains its files and chats. There are no destructive
 database/file deletion commands.
@@ -152,6 +153,8 @@ spool-server user enable --user alice
 
 spool-server project member set --project Example --user bob \
   --access read-only --own-access read-only
+spool-server project member set --project Example --user bob --upload=true
+spool-server project member set --project Example --user bob --upload=false
 spool-server project update --project Example --shared-chats=true
 spool-server project member remove --project Example --user bob
 
@@ -167,8 +170,11 @@ spool-server issues set --project Example --enabled=false
 
 Updates preserve omitted fields. `project update --members` replaces the member
 list; individual member commands preserve existing permissions unless explicitly
-changed. Issue repositories are detected from Git origin. Enabling automation
-requires a working authenticated `gh`; owner/assignees must be project members.
+changed. File uploads default off for new members and are independent of chat
+permissions; use `project member set --upload=true` to grant them or
+`--upload=false` to revoke them. Issue repositories are detected from Git origin.
+Enabling automation requires a working authenticated `gh`; owner/assignees must
+be project members.
 `issues show` prints persisted next/last run times, errors and the latest task.
 For labels containing commas, use repeated `--label 'UI, v2' --label 'backend'`
 instead of `--labels`; both forms replace the saved filter.

@@ -60,7 +60,9 @@ type Project struct {
 	Members            []string                 `json:"-"`
 	MemberAccess       map[string]string        `json:"-"`
 	MemberOwnAccess    map[string]string        `json:"-"`
+	MemberUpload       map[string]bool          `json:"-"`
 	CanCreate          *bool                    `json:"can_create,omitempty"`
+	CanUpload          bool                     `json:"can_upload"`
 	Issues             IssuesAutomation         `json:"-"`
 }
 type Settings struct {
@@ -375,21 +377,24 @@ func (s *Store) Projects() ([]Project, error) {
 		if out[i].Issues, err = s.IssuesAutomation(out[i].ID); err != nil {
 			return nil, err
 		}
-		members, e := s.db.Query(`SELECT m.user_id,COALESCE(a.access,'control'),COALESCE(own.access,'create') FROM project_members m JOIN users u ON u.id=m.user_id LEFT JOIN project_member_access a ON a.project_id=m.project_id AND a.user_id=m.user_id LEFT JOIN project_member_own_access own ON own.project_id=m.project_id AND own.user_id=m.user_id WHERE m.project_id=? AND u.disabled=0`, out[i].ID)
+		members, e := s.db.Query(`SELECT m.user_id,COALESCE(a.access,'control'),COALESCE(own.access,'create'),COALESCE(upload.enabled,0) FROM project_members m JOIN users u ON u.id=m.user_id LEFT JOIN project_member_access a ON a.project_id=m.project_id AND a.user_id=m.user_id LEFT JOIN project_member_own_access own ON own.project_id=m.project_id AND own.user_id=m.user_id LEFT JOIN project_member_upload upload ON upload.project_id=m.project_id AND upload.user_id=m.user_id WHERE m.project_id=? AND u.disabled=0`, out[i].ID)
 		if e != nil {
 			return nil, e
 		}
 		out[i].MemberAccess = map[string]string{}
 		out[i].MemberOwnAccess = map[string]string{}
+		out[i].MemberUpload = map[string]bool{}
 		for members.Next() {
 			var id, access, own string
-			if e = members.Scan(&id, &access, &own); e != nil {
+			var upload bool
+			if e = members.Scan(&id, &access, &own, &upload); e != nil {
 				members.Close()
 				return nil, e
 			}
 			out[i].Members = append(out[i].Members, id)
 			out[i].MemberAccess[id] = access
 			out[i].MemberOwnAccess[id] = own
+			out[i].MemberUpload[id] = upload
 		}
 		e = members.Err()
 		members.Close()
@@ -441,6 +446,7 @@ func (s *Store) SaveProject(v Project) (Project, error) {
 	}
 	access := make(map[string]string, len(v.Members))
 	ownAccess := make(map[string]string, len(v.Members))
+	upload := make(map[string]bool, len(v.Members))
 	for _, id := range v.Members {
 		mode := v.MemberAccess[id]
 		if mode == "" {
@@ -458,9 +464,11 @@ func (s *Store) SaveProject(v Project) (Project, error) {
 			return v, fmt.Errorf("invalid project member own chat access")
 		}
 		ownAccess[id] = own
+		upload[id] = v.MemberUpload[id]
 	}
 	v.MemberAccess = access
 	v.MemberOwnAccess = ownAccess
+	v.MemberUpload = upload
 	tx, err := s.db.Begin()
 	if err != nil {
 		return v, err
@@ -505,6 +513,7 @@ func (s *Store) SaveProject(v Project) (Project, error) {
 		if disabled {
 			delete(v.MemberAccess, id)
 			delete(v.MemberOwnAccess, id)
+			delete(v.MemberUpload, id)
 			continue
 		}
 		enabledMembers = append(enabledMembers, id)
@@ -515,6 +524,9 @@ func (s *Store) SaveProject(v Project) (Project, error) {
 			return v, err
 		}
 		if _, err = tx.Exec(`INSERT OR REPLACE INTO project_member_own_access(project_id,user_id,access) VALUES(?,?,?)`, v.ID, id, v.MemberOwnAccess[id]); err != nil {
+			return v, err
+		}
+		if _, err = tx.Exec(`INSERT OR REPLACE INTO project_member_upload(project_id,user_id,enabled) VALUES(?,?,?)`, v.ID, id, v.MemberUpload[id]); err != nil {
 			return v, err
 		}
 	}
@@ -575,6 +587,12 @@ func (s *Store) CanCreateChat(user, project string) bool {
 	return err == nil && access == "create"
 }
 
+func (s *Store) CanUploadProject(user, project string) bool {
+	var allowed bool
+	err := s.db.QueryRow(`SELECT EXISTS(SELECT 1 FROM project_member_upload upload JOIN projects p ON p.id=upload.project_id JOIN users u ON u.id=upload.user_id JOIN project_members m ON m.project_id=p.id AND m.user_id=u.id WHERE u.id=? AND p.id=? AND u.disabled=0 AND p.archived=0 AND upload.enabled=1)`, user, project).Scan(&allowed)
+	return err == nil && allowed
+}
+
 func (s *Store) CreateChat(user, project string, backend chatmodel.Backend) (chatmodel.Session, error) {
 	if !s.CanCreateChat(user, project) {
 		return chatmodel.Session{}, os.ErrPermission
@@ -591,6 +609,7 @@ func (s *Store) UserProjects(user string) ([]Project, error) {
 		if !p.Archived && s.CanAccessProject(user, p.ID) {
 			allowed := p.MemberOwnAccess[user] != "read-only"
 			p.CanCreate = &allowed
+			p.CanUpload = p.MemberUpload[user]
 			out = append(out, p)
 		}
 	}

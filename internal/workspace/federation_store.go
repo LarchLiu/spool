@@ -89,6 +89,7 @@ type FederationProject struct {
 	ID        string `json:"id"`
 	Access    string `json:"access"`
 	OwnAccess string `json:"own_access"`
+	Upload    bool   `json:"upload"`
 }
 
 type FederationPeer struct {
@@ -559,6 +560,9 @@ func (s *Store) federationLogin(peer FederationPeer, person federationSubject, c
 				return "", time.Time{}, err
 			}
 			if _, err = tx.Exec(`INSERT INTO project_member_own_access VALUES(?,?,?)`, project.ID, user, project.OwnAccess); err != nil {
+				return "", time.Time{}, err
+			}
+			if _, err = tx.Exec(`INSERT INTO project_member_upload VALUES(?,?,?)`, project.ID, user, project.Upload); err != nil {
 				return "", time.Time{}, err
 			}
 		}

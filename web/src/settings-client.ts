@@ -67,6 +67,7 @@ export type ManagedProject = {
   members: string[];
   member_access: Record<string, "read-only" | "control">;
   member_own_access: Record<string, "read-only" | "create">;
+  member_upload: Record<string, boolean>;
   archived: boolean;
   shared_chats: boolean;
   shared_local_chats?: boolean;
@@ -360,6 +361,7 @@ export function newProject(): ManagedProject {
     members: [],
     member_access: {},
     member_own_access: {},
+    member_upload: {},
     archived: false,
     shared_chats: false,
     shared_local_chats: false,
@@ -380,6 +382,7 @@ export function projectDraft(project: ManagedProject): ManagedProject {
   copy.members ??= [];
   copy.member_access ??= {};
   copy.member_own_access ??= {};
+  copy.member_upload ??= {};
   copy.allow_external_files ??= true;
   copy.issues.labels ??= [];
   copy.issues.assignee_ids ??= copy.issues.user_id ? [copy.issues.user_id] : [];
@@ -400,6 +403,9 @@ export function projectMembers(
     ),
     member_own_access: Object.fromEntries(
       members.map((id) => [id, project.member_own_access?.[id] ?? "create"]),
+    ),
+    member_upload: Object.fromEntries(
+      members.map((id) => [id, project.member_upload?.[id] ?? false]),
     ),
     issues: {
       ...project.issues,

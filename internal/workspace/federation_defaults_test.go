@@ -13,10 +13,10 @@ func TestFederationDefaultProjectsOnlyApplyOnFirstLogin(t *testing.T) {
 	manual := testProject(t, target)
 	future := testProject(t, target)
 	peer := federationPairForTest(t, target, source, "https://source.example.test", true, nil, []FederationProject{
-		{removed.ID, "control", "create"}, {changed.ID, "control", "create"},
+		{ID: removed.ID, Access: "control", OwnAccess: "create", Upload: true}, {ID: changed.ID, Access: "control", OwnAccess: "create", Upload: true},
 	})
 	otherPeer := federationPairForTest(t, target, otherSource, "https://other.example.test", true, nil, []FederationProject{
-		{future.ID, "control", "read-only"},
+		{ID: future.ID, Access: "control", OwnAccess: "read-only"},
 	})
 	login := func(peer FederationPeer, subject string) (string, User) {
 		t.Helper()
@@ -52,7 +52,8 @@ func TestFederationDefaultProjectsOnlyApplyOnFirstLogin(t *testing.T) {
 				continue
 			}
 			if !target.CanAccessProject(user.ID, project.ID) || project.MemberAccess[user.ID] != expected.Access ||
-				project.MemberOwnAccess[user.ID] != expected.OwnAccess || target.CanCreateChat(user.ID, project.ID) != (expected.OwnAccess == "create") {
+				project.MemberOwnAccess[user.ID] != expected.OwnAccess || target.CanCreateChat(user.ID, project.ID) != (expected.OwnAccess == "create") ||
+				project.MemberUpload[user.ID] != expected.Upload || target.CanUploadProject(user.ID, project.ID) != expected.Upload {
 				t.Errorf("user %s project %s: got %s/%s, want %s/%s", user.ID, project.ID, project.MemberAccess[user.ID], project.MemberOwnAccess[user.ID], expected.Access, expected.OwnAccess)
 			}
 		}
@@ -80,8 +81,8 @@ func TestFederationDefaultProjectsOnlyApplyOnFirstLogin(t *testing.T) {
 	if _, err := target.SaveProject(manual); err != nil {
 		t.Fatal(err)
 	}
-	wantExisting := []FederationProject{{changed.ID, "read-only", "read-only"}, {manual.ID, "control", "create"}}
-	defaults := []FederationProject{{removed.ID, "read-only", "read-only"}, {changed.ID, "control", "create"}, {future.ID, "read-only", "create"}}
+	wantExisting := []FederationProject{{ID: changed.ID, Access: "read-only", OwnAccess: "read-only"}, {ID: manual.ID, Access: "control", OwnAccess: "create"}}
+	defaults := []FederationProject{{ID: removed.ID, Access: "read-only", OwnAccess: "read-only", Upload: true}, {ID: changed.ID, Access: "control", OwnAccess: "create", Upload: true}, {ID: future.ID, Access: "read-only", OwnAccess: "create"}}
 	if err := target.SetFederationTrustProjects(peer.ID, defaults); err != nil {
 		t.Fatal(err)
 	}
@@ -161,7 +162,7 @@ func TestFederationDefaultProjectsRequireIncomingApproval(t *testing.T) {
 			} else if _, err := local.db.Exec(`UPDATE federation_trust_grants SET incoming=?,outgoing=? WHERE peer_id=?`, direction == "incoming", direction == "outgoing", peer.ID); err != nil {
 				t.Fatal(err)
 			}
-			defaults := []FederationProject{{project.ID, "read-only", "create"}}
+			defaults := []FederationProject{{ID: project.ID, Access: "read-only", OwnAccess: "create"}}
 			err := local.SetFederationTrustProjects(peer.ID, defaults)
 			if (err == nil) != (direction == "incoming") {
 				t.Fatalf("setting defaults with %s approval: %v", direction, err)
@@ -196,13 +197,13 @@ func TestFederationDefaultProjectsRejectInvalidUpdates(t *testing.T) {
 	if _, err := local.SaveProject(archived); err != nil {
 		t.Fatal(err)
 	}
-	valid := FederationProject{project.ID, "read-only", "create"}
+	valid := FederationProject{ID: project.ID, Access: "read-only", OwnAccess: "create"}
 	peer := federationPairForTest(t, local, remote, "https://source.example.test", true, nil, []FederationProject{valid})
 	for _, invalid := range [][]FederationProject{
-		{{"missing", "read-only", "create"}},
-		{{archived.ID, "read-only", "create"}},
-		{{project.ID, "invalid", "create"}},
-		{{project.ID, "read-only", "invalid"}},
+		{{ID: "missing", Access: "read-only", OwnAccess: "create"}},
+		{{ID: archived.ID, Access: "read-only", OwnAccess: "create"}},
+		{{ID: project.ID, Access: "invalid", OwnAccess: "create"}},
+		{{ID: project.ID, Access: "read-only", OwnAccess: "invalid"}},
 		{valid, valid},
 	} {
 		if err := local.SetFederationTrustProjects(peer.ID, invalid); err == nil {

@@ -15,6 +15,7 @@ export type Project = {
   shared_local_chats?: boolean;
   allow_external_files?: boolean;
   can_create?: boolean;
+  can_upload?: boolean;
 };
 export type ProjectFileEntry = {
   name: string;

@@ -409,6 +409,12 @@ try {
   );
   await beta.click();
   assert.equal(await page.getByRole("switch", { name: "Archived" }).count(), 0);
+  const alphaUpload = page.getByRole("switch", { name: "Alpha · Allow file uploads", exact: true });
+  const betaUpload = page.getByRole("switch", { name: "Beta · Allow file uploads", exact: true });
+  assert.ok(!(await alphaUpload.isChecked()));
+  assert.ok(!(await betaUpload.isChecked()));
+  await alphaUpload.click();
+  assert.ok(await alphaUpload.isChecked());
   assert.equal(await page.getByRole("checkbox").count(), 0);
   for (const toggle of [alpha, beta]) {
     const bounds = await toggle.boundingBox();
@@ -644,8 +650,8 @@ try {
         "in",
         {
           projects: [
-            { id: "alpha", access: "control", own_access: "read-only" },
-            { id: "beta", access: "read-only", own_access: "create" },
+            { id: "alpha", access: "control", own_access: "read-only", upload: true },
+            { id: "beta", access: "read-only", own_access: "create", upload: false },
           ],
           transport: "",
           address: "",
@@ -763,7 +769,7 @@ try {
   await saveDefaults.click();
   await saveDefaults.waitFor({ state: "hidden" });
   assert.deepEqual(await page.evaluate(() => window.trustPeers[0].projects), [
-    { id: "beta", access: "control", own_access: "create" },
+    { id: "beta", access: "control", own_access: "create", upload: false },
   ]);
   await manageDefaults.click();
   assert.ok(!(await defaultAlpha.isChecked()));

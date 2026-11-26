@@ -1436,5 +1436,18 @@
   "Invalid connection mode.": "接続方式が無効です。",
   "Configure the selected connection before connecting.": "接続する前に、選択した接続のアドレスまたはペアリングコードを設定してください。",
   "Trust direction": "信頼の方向",
-  "Waiting to sync revocation": "取り消しの同期待ち"
+  "Waiting to sync revocation": "取り消しの同期待ち",
+  "Allow file uploads": "ファイルのアップロードを許可",
+  "Upload files": "ファイルをアップロード",
+  "Project file actions": "プロジェクトファイル操作",
+  "Upload to {path}": "{path} にアップロード",
+  "Uploading {name}…": "{name} をアップロード中…",
+  "Uploaded {count} files to {path}": "{count} 個のファイルを {path} にアップロードしました",
+  "File upload permission is disabled": "ファイルのアップロード権限が無効です",
+  "Invalid file upload": "無効なファイルアップロードです",
+  "Invalid upload filename": "アップロードするファイル名が無効です",
+  "Each uploaded file must be at most 64 MB": "各アップロードファイルは 64 MB 以下にしてください",
+  "Could not save uploaded file": "アップロードしたファイルを保存できませんでした",
+  "Upload one file per request": "リクエストごとに 1 つのファイルをアップロードしてください",
+  "A file with this name already exists": "同じ名前のファイルが既に存在します"
 }

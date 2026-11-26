@@ -259,6 +259,12 @@ func (a *App) sessionFilesResponse(w http.ResponseWriter, r *http.Request, chat 
 		apiError(w, 404, "Session directory is unavailable")
 		return
 	}
+	if kind == "upload" {
+		a.serveProjectUpload(w, r, directory, func(path string) bool {
+			return matchLocalSessionProject(path, mappings).ID == chat.ProjectID
+		})
+		return
+	}
 	if kind == "git" {
 		a.serveWorkspaceGit(w, r, directory, chat.CanControl == nil || *chat.CanControl, func(path string) bool {
 			return matchLocalSessionProject(path, mappings).ID == chat.ProjectID

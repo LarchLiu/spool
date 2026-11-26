@@ -36,6 +36,7 @@ import { GitPanel } from "./git-panel";
 import { FilePanelButton } from "./file-panel-button";
 import { imageSource } from "./image-resource";
 import { ResourceImage } from "./resource-image";
+import { FileUploadMenu } from "./file-upload-menu";
 
 const readOffice = (path: string, signal: AbortSignal) => api<OfficeDocument>(apiPath(path), undefined, signal);
 
@@ -203,13 +204,16 @@ function ProjectFiles({
       )
         .then((listing) => {
           if (controller.signal.aborted || !mounted.current) return;
+          const additions = listing.entries
+            .map((entry) => entry.path + (entry.kind === "directory" ? "/" : ""))
+            .filter((path) => !model.getItem(path));
           model.batch(
-            listing.entries.map((entry) => ({
+            additions.map((path) => ({
               type: "add",
-              path: entry.path + (entry.kind === "directory" ? "/" : ""),
+              path,
             })),
           );
-          setCount((value) => value + listing.entries.length);
+          setCount((value) => value + additions.length);
           if (listing.truncated) setTruncated(true);
         })
         .catch((err: unknown) => {
@@ -385,7 +389,23 @@ function ProjectFiles({
         t={t}
         tree={
           <>
-            <div className="file-tree-section">
+            <FileUploadMenu base={fileAPIBase(project.id, chatID).slice(4)} workspace={chatID ? workspacePath : undefined}
+              enabled={project.can_upload === true} ready={ready} active={active && panel === "project"} t={t}
+              onUploaded={async (directory, entry) => {
+                await requests.current.get(directory);
+                if (!mounted.current) return;
+                requests.current.delete(directory);
+                await loadDirectory(directory);
+                if (!mounted.current) return;
+                if (!model.getItem(entry.path)) {
+                  model.add(entry.path);
+                  setCount((value) => value + 1);
+                }
+                if (directory !== ".") {
+                  const item = model.getItem(directory + "/");
+                  if (item && "expand" in item) item.expand();
+                }
+              }}>
               {!ready && (
                 <p
                   className="file-panel-notice"
@@ -429,7 +449,7 @@ function ProjectFiles({
                   {t("This directory is empty.")}
                 </p>
               )}
-            </div>
+            </FileUploadMenu>
             {error && (
               <div className="file-panel-notice" role="alert">
                 {error}

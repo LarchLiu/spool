@@ -68,6 +68,7 @@ CREATE TABLE IF NOT EXISTS projects(id TEXT PRIMARY KEY,name TEXT NOT NULL,path 
 CREATE TABLE IF NOT EXISTS project_members(project_id TEXT NOT NULL REFERENCES projects(id),user_id TEXT NOT NULL REFERENCES users(id),PRIMARY KEY(project_id,user_id));
 CREATE TABLE IF NOT EXISTS project_member_access(project_id TEXT NOT NULL,user_id TEXT NOT NULL,access TEXT NOT NULL CHECK(access IN ('read-only','control')),PRIMARY KEY(project_id,user_id),FOREIGN KEY(project_id,user_id) REFERENCES project_members(project_id,user_id) ON DELETE CASCADE);
 CREATE TABLE IF NOT EXISTS project_member_own_access(project_id TEXT NOT NULL,user_id TEXT NOT NULL,access TEXT NOT NULL CHECK(access IN ('read-only','create')),PRIMARY KEY(project_id,user_id),FOREIGN KEY(project_id,user_id) REFERENCES project_members(project_id,user_id) ON DELETE CASCADE);
+CREATE TABLE IF NOT EXISTS project_member_upload(project_id TEXT NOT NULL,user_id TEXT NOT NULL,enabled INTEGER NOT NULL DEFAULT 0,PRIMARY KEY(project_id,user_id),FOREIGN KEY(project_id,user_id) REFERENCES project_members(project_id,user_id) ON DELETE CASCADE);
 CREATE TABLE IF NOT EXISTS project_local_sharing(project_id TEXT PRIMARY KEY REFERENCES projects(id),enabled INTEGER NOT NULL DEFAULT 0);
 CREATE TABLE IF NOT EXISTS project_file_access(project_id TEXT PRIMARY KEY REFERENCES projects(id),allow_external_files INTEGER NOT NULL DEFAULT 1);
 CREATE TABLE IF NOT EXISTS project_permission_preferences(project_id TEXT NOT NULL REFERENCES projects(id),backend TEXT NOT NULL,mode TEXT NOT NULL,PRIMARY KEY(project_id,backend));

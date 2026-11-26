@@ -1436,5 +1436,18 @@
   "Invalid connection mode.": "连接方式无效。",
   "Configure the selected connection before connecting.": "请先配置所选连接方式的地址或配对码。",
   "Trust direction": "信任方向",
-  "Waiting to sync revocation": "等待同步撤销"
+  "Waiting to sync revocation": "等待同步撤销",
+  "Allow file uploads": "允许上传文件",
+  "Upload files": "上传文件",
+  "Project file actions": "项目文件操作",
+  "Upload to {path}": "上传到 {path}",
+  "Uploading {name}…": "正在上传 {name}…",
+  "Uploaded {count} files to {path}": "已上传 {count} 个文件到 {path}",
+  "File upload permission is disabled": "未开启文件上传权限",
+  "Invalid file upload": "无效的文件上传",
+  "Invalid upload filename": "上传文件名无效",
+  "Each uploaded file must be at most 64 MB": "每个上传文件不能超过 64 MB",
+  "Could not save uploaded file": "无法保存上传文件",
+  "Upload one file per request": "每个请求只能上传一个文件",
+  "A file with this name already exists": "已存在同名文件"
 }

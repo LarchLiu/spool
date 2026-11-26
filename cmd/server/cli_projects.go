@@ -18,11 +18,12 @@ type localProject struct {
 	Members         []string                   `json:"members"`
 	MemberAccess    map[string]string          `json:"member_access"`
 	MemberOwnAccess map[string]string          `json:"member_own_access"`
+	MemberUpload    map[string]bool            `json:"member_upload"`
 	Issues          workspace.IssuesAutomation `json:"issues"`
 }
 
 func projectJSON(p workspace.Project) localProject {
-	return localProject{p, p.Path, p.Members, p.MemberAccess, p.MemberOwnAccess, p.Issues}
+	return localProject{p, p.Path, p.Members, p.MemberAccess, p.MemberOwnAccess, p.MemberUpload, p.Issues}
 }
 
 func findProject(s *workspace.Store, ref string) (workspace.Project, error) {
@@ -174,13 +175,15 @@ func addProjects(root *command, out io.Writer) {
 	}
 	m := c.add("member", "Grant, edit or remove individual project membership", "")
 	for _, action := range []string{"set", "remove"} {
-		n := m.add(action, strings.Title(action)+" a project member", "Shared access: control or read-only. Own-chat access: create or read-only.\nExisting member permissions are preserved when their options are omitted.\nAn automation owner/assignee must remain a member while automation is enabled.")
+		n := m.add(action, strings.Title(action)+" a project member", "Shared access: control or read-only. Own-chat access: create or read-only.\nFile uploads are independent of chat permissions and default off for new members.\nExisting member permissions are preserved when their options are omitted.\nAn automation owner/assignee must remain a member while automation is enabled.")
 		ref := n.flags.String("project", "", "Project name or ID (required)")
 		user := n.flags.String("user", "", "Username or ID (required)")
 		access, own := "", ""
+		upload := false
 		if action == "set" {
 			n.flags.StringVar(&access, "access", "control", "Shared-chat permission: control or read-only")
 			n.flags.StringVar(&own, "own-access", "create", "Personal-chat permission: create or read-only")
+			n.flags.BoolVar(&upload, "upload", false, "Allow file uploads to the project directory")
 		}
 		n.validate = func() error {
 			if err := required("project", *ref, "user", *user); err != nil {
@@ -212,6 +215,9 @@ func addProjects(root *command, out io.Writer) {
 				}
 				if !exists || changed(n, "own-access") {
 					p.MemberOwnAccess[u.ID] = own
+				}
+				if !exists || changed(n, "upload") {
+					p.MemberUpload[u.ID] = upload
 				}
 			}
 			p, err = s.Store.SaveProject(p)

@@ -45,6 +45,7 @@ type settingsProject struct {
 	Members         []string                   `json:"members"`
 	MemberAccess    map[string]string          `json:"member_access"`
 	MemberOwnAccess map[string]string          `json:"member_own_access"`
+	MemberUpload    map[string]bool            `json:"member_upload"`
 	Issues          workspace.IssuesAutomation `json:"issues"`
 	NextRun         int64                      `json:"next_run"`
 	LastError       string                     `json:"last_error"`
@@ -243,7 +244,7 @@ func (s *desktopSettings) Snapshot(ctx context.Context) (settingsSnapshot, error
 	}
 	v.Projects = []settingsProject{}
 	for _, project := range projects {
-		v.Projects = append(v.Projects, settingsProject{Project: project, Path: project.Path, Members: project.Members, MemberAccess: project.MemberAccess, MemberOwnAccess: project.MemberOwnAccess, Issues: project.Issues, NextRun: project.Issues.NextRunAt, LastError: project.Issues.LastError, LastChat: project.Issues.LastChatID})
+		v.Projects = append(v.Projects, settingsProject{Project: project, Path: project.Path, Members: project.Members, MemberAccess: project.MemberAccess, MemberOwnAccess: project.MemberOwnAccess, MemberUpload: project.MemberUpload, Issues: project.Issues, NextRun: project.Issues.NextRunAt, LastError: project.Issues.LastError, LastChat: project.Issues.LastChatID})
 	}
 	agents, err := store.Agents()
 	if err != nil {
@@ -676,6 +677,7 @@ func (s *desktopSettings) Execute(ctx context.Context, command settingsCommand) 
 	case "save-project":
 		project := command.Project.Project
 		project.Path, project.Members, project.MemberAccess, project.MemberOwnAccess, project.Issues = command.Project.Path, command.Project.Members, command.Project.MemberAccess, command.Project.MemberOwnAccess, command.Project.Issues
+		project.MemberUpload = command.Project.MemberUpload
 		// Preserve the original enablement gate: an existing schedule may be
 		// edited offline, but a new one requires a successful GitHub CLI check.
 		wasEnabled := false
