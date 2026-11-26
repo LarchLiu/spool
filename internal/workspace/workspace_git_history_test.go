@@ -25,7 +25,12 @@ func TestWorkspaceGitHistoryPagesTagsAndOutgoingCommits(t *testing.T) {
 			message += "\n\nRelease details\nSecond line with 中文\n\nFinal paragraph"
 		}
 		body := fmt.Sprintf("revision %d\n", i)
-		fmt.Fprintf(&history, "commit refs/heads/dev\nauthor Spool Test <test@example.invalid> %d +0000\ncommitter Spool Test <test@example.invalid> %d +0000\ndata %d\n%s\nM 100644 inline file.txt\ndata %d\n%s\n", 1700000000+i, 1700000000+i, len(message), message, len(body), body)
+		fmt.Fprintf(&history, "commit refs/heads/dev\nauthor Spool Test <test@example.invalid> %d +0000\ncommitter Spool Test <test@example.invalid> %d +0000\ndata %d\n%s\n", 1700000000+i, 1700000000+i, len(message), message)
+		// Tagged release commits may have no file changes, including at HEAD
+		// and on later history pages.
+		if i != 49 && i != 104 {
+			fmt.Fprintf(&history, "M 100644 inline file.txt\ndata %d\n%s\n", len(body), body)
+		}
 	}
 	sessionFileGitInput(t, p.Path, strings.NewReader(history.String()), "fast-import", "--quiet")
 	sessionFileGit(t, p.Path, "reset", "--hard", "HEAD")
@@ -142,5 +147,71 @@ func TestWorkspaceGitHistoryPagesTagsAndOutgoingCommits(t *testing.T) {
 	w := apiRequest(a, "GET", "/api/projects/"+p.ID+"/git?view=history&cursor="+url.QueryEscape(first.NextCursor), "", cookie, "")
 	if w.Code != 409 {
 		t.Fatalf("rewritten history: %d %s", w.Code, w.Body.String())
+	}
+}
+
+func TestWorkspaceGitHistoryEmptyReleasesRespectDirectoryAndWorktree(t *testing.T) {
+	t.Parallel()
+	s := testStore(t)
+	u := testUser(t, s, "git-empty-release")
+	p := testProject(t, s, u)
+	sessionFileGit(t, p.Path, "init", "-b", "main")
+	writeSessionFile(t, p.Path, "src/file.txt", "initial\n")
+	sessionFileGit(t, p.Path, "add", ".")
+	sessionFileGit(t, p.Path, "commit", "-m", "Initial source")
+	initial := sessionFileGit(t, p.Path, "rev-parse", "HEAD")
+	sessionFileGit(t, p.Path, "commit", "--allow-empty", "-m", "Release Android")
+	release := sessionFileGit(t, p.Path, "rev-parse", "HEAD")
+	sessionFileGit(t, p.Path, "tag", "-a", "android-v0.9.1", "-m", "Android release")
+	writeSessionFile(t, p.Path, "outside.txt", "outside source directory\n")
+	sessionFileGit(t, p.Path, "add", ".")
+	sessionFileGit(t, p.Path, "commit", "-m", "Unrelated change")
+	latest := sessionFileGit(t, p.Path, "rev-parse", "HEAD")
+	linked := filepath.Join(t.TempDir(), "linked")
+	sessionFileGit(t, p.Path, "worktree", "add", "-b", "feature", linked)
+	sessionFileGit(t, linked, "commit", "--allow-empty", "-m", "Release feature")
+	feature := sessionFileGit(t, linked, "rev-parse", "HEAD")
+	sessionFileGit(t, linked, "tag", "feature-release")
+	a := NewApp(s, &fakeRunner{}, "", "")
+	cookie, _ := loginRequest(t, a, u.Username)
+	for _, tc := range []struct {
+		name      string
+		directory string
+		ids       []string
+	}{
+		{"root", p.Path, []string{latest, release, initial}},
+		{"subdirectory", filepath.Join(p.Path, "src"), []string{initial}},
+		{"worktree", linked, []string{feature, latest, release, initial}},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			project := p
+			if tc.directory != p.Path {
+				var err error
+				project, err = s.SaveProject(Project{Name: tc.name, Path: tc.directory, Members: []string{u.ID}})
+				if err != nil {
+					t.Fatal(err)
+				}
+			}
+			w := apiRequest(a, "GET", "/api/projects/"+project.ID+"/git?view=history", "", cookie, "")
+			var view workspaceGitView
+			if err := json.Unmarshal(w.Body.Bytes(), &view); err != nil || w.Code != 200 || len(view.Commits) != len(tc.ids) {
+				t.Fatalf("history: %d %s: %v", w.Code, w.Body.String(), err)
+			}
+			for i, commit := range view.Commits {
+				if commit.ID != tc.ids[i] {
+					t.Errorf("commit %d: %s, want %s", i, commit.ID, tc.ids[i])
+				}
+				wantTag := ""
+				switch commit.ID {
+				case release:
+					wantTag = "android-v0.9.1"
+				case feature:
+					wantTag = "feature-release"
+				}
+				if wantTag == "" && len(commit.Tags) != 0 || wantTag != "" && (len(commit.Tags) != 1 || commit.Tags[0] != wantTag) {
+					t.Errorf("commit %s tags: %v, want %q", commit.ID, commit.Tags, wantTag)
+				}
+			}
+		})
 	}
 }

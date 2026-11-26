@@ -13,7 +13,13 @@ const workspaceGitHistoryPage = 50
 // page boundaries. The caller verifies that the anchor is still reachable.
 func workspaceGitHistory(ctx context.Context, directory string, view *workspaceGitView, anchor string, offset int) error {
 	run := func(args ...string) ([]byte, error) { return readWorkspaceGit(ctx, directory, 4*1024*1024, args...) }
-	body, err := run("log", "-"+strconv.Itoa(workspaceGitHistoryPage+1), "--skip="+strconv.Itoa(offset), "-z", "--format=%H%x00%s%x00%an%x00%at%x00%B", anchor, "--", ".")
+	args := []string{"log", "-" + strconv.Itoa(workspaceGitHistoryPage+1), "--skip=" + strconv.Itoa(offset), "-z", "--format=%H%x00%s%x00%an%x00%at%x00%B", anchor, "--"}
+	// A path filter drops empty release commits and their tags. Only scope
+	// history by path when viewing a subdirectory of the selected worktree.
+	if root, _ := gitWorkspace(directory); directory != root {
+		args = append(args, ".")
+	}
+	body, err := run(args...)
 	if err != nil {
 		return err
 	}
