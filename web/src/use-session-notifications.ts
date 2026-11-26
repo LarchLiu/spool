@@ -1,7 +1,8 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import {
   desktopViewedChat,
-  isDesktopChat,
+  isLocalDesktopChat,
+  subscribeDesktopServerSelection,
   subscribeDesktopSessionNotifications,
   subscribeDesktopSessionView,
   takeDesktopSessionNotifications,
@@ -30,6 +31,7 @@ export function useSessionNotifications(
   user: string | undefined,
   chat: string,
 ) {
+  const native = isLocalDesktopChat();
   const activeChat = useRef(chat);
   activeChat.current = chat;
   const [state, setState] = useState<{
@@ -38,7 +40,7 @@ export function useSessionNotifications(
   }>({ notifications: {} });
   useEffect(() => {
     setState({ user, notifications: {} });
-    if (!user) return;
+    if (!user || !native) return;
     const receive = () => {
       const pending = takeDesktopSessionNotifications();
       if (!pending.length) return;
@@ -55,7 +57,7 @@ export function useSessionNotifications(
     const unsubscribe = subscribeDesktopSessionNotifications(receive);
     receive();
     return unsubscribe;
-  }, [user]);
+  }, [user, native]);
   const dismiss = useCallback((chat: string) => {
     setState((previous) => {
       if (!(chat in previous.notifications)) return previous;
@@ -66,7 +68,7 @@ export function useSessionNotifications(
   }, []);
   const receive = useCallback(
     (notification: SessionNotification) => {
-      if (!user || isDesktopChat()) return;
+      if (!user || isLocalDesktopChat()) return;
       const viewedChat =
         document.visibilityState === "visible" && document.hasFocus()
           ? activeChat.current
@@ -87,21 +89,23 @@ export function useSessionNotifications(
     if (!user) return;
     const read = () => {
       if (
-        isDesktopChat()
+        native
           ? desktopViewedChat() === chat
           : document.visibilityState === "visible" && document.hasFocus()
       )
         dismiss(chat);
     };
     read();
-    if (isDesktopChat()) return subscribeDesktopSessionView(read);
+    if (native) return subscribeDesktopSessionView(read);
+    const unsubscribe = subscribeDesktopServerSelection(read);
     window.addEventListener("focus", read);
     document.addEventListener("visibilitychange", read);
     return () => {
+      unsubscribe();
       window.removeEventListener("focus", read);
       document.removeEventListener("visibilitychange", read);
     };
-  }, [user, chat, dismiss]);
+  }, [user, chat, dismiss, native]);
   return {
     notifications: state.user === user ? state.notifications : {},
     dismiss,

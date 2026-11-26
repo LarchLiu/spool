@@ -33,6 +33,7 @@ import {
 import { api, APIError, getCSRF, setCSRF } from "./api";
 import {
   isDesktopChat,
+  isLocalDesktopChat,
   notifyDesktopViewChanged,
   subscribeDesktopNotifications,
   takeDesktopNotification,
@@ -1085,7 +1086,7 @@ function App() {
         csrf: getCSRF,
         visible: () => document.visibilityState === "visible",
         view: () => ({
-          focused: !isDesktopChat() && document.visibilityState === "visible" && document.hasFocus(),
+          focused: !isLocalDesktopChat() && document.visibilityState === "visible" && document.hasFocus(),
           chat: activeID.current,
         }),
         checkAuth: (signal) => api("/me", undefined, signal),

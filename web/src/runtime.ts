@@ -182,6 +182,11 @@ export function desktopServers(
     : emptyDesktopServers;
 }
 
+export function isLocalDesktopChat(surface: unknown = globalThis): boolean {
+  // Each cached page receives its own server as selected, even in the background.
+  return isDesktopChat(surface) && desktopServers(surface).selected === "local";
+}
+
 export function subscribeDesktopServers(
   listener: () => void,
   surface: unknown = globalThis,

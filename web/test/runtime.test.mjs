@@ -5,6 +5,7 @@ import { createElement } from "react";
 import { renderToStaticMarkup } from "react-dom/server";
 import {
   isDesktopChat,
+  isLocalDesktopChat,
   desktopSettingsPath,
   desktopLocale,
   desktopTheme,
@@ -43,6 +44,20 @@ test("desktop presentation requires the explicit preload flag, not a query or ge
   assert.equal(isDesktopChat({ spoolDesktop: true }), true);
   for (const surface of [null, {}, { spoolDesktop: "true" }, { spoolDesktop: false }, { mygo: {} }, { location: { search: "?desktop=true" } }]) {
     assert.equal(isDesktopChat(surface), false);
+  }
+});
+
+test("only the local desktop page uses native session notifications", () => {
+  assert.equal(isLocalDesktopChat({}), false);
+  assert.equal(isLocalDesktopChat({ spoolDesktop: true }), true);
+  const entries = [
+    { id: "local", name: "Home", local: true, status: "connected" },
+    { id: "remote-1234", name: "Remote", local: false, status: "connected" },
+  ];
+  for (const selected of ["local", "remote-1234"]) {
+    const surface = { spoolDesktop: true, spoolServers: { entries, selected } };
+    assert.equal(isLocalDesktopChat(surface), selected === "local");
+    assert.equal(isLocalDesktopChat({ spoolServers: surface.spoolServers }), false);
   }
 });
 
