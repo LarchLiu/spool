@@ -11,6 +11,15 @@ Do not append task-specific implementation notes or verification logs to READMEs
 Use Bun for repository-owned JavaScript tooling and tests. Do not introduce a
 Python runtime dependency for development, test, build, or release scripts.
 
+## Cross-Client Consistency
+
+For every change, assess whether Desktop, Web/PWA, and Android need corresponding
+updates. Keep shared behavior, UI semantics (including icons and labels), and
+API/data contracts consistent across affected clients. Check platform-specific
+implementations and generated assets even when Desktop and Web share code.
+Apply and validate matching changes where needed, preserve intentional platform
+differences, and mention any relevant remaining inconsistency in the handoff.
+
 ## Development And Test Storage
 
 Keep reusable caches separate from disposable test data. Use each tool's standard
