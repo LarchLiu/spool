@@ -37,6 +37,7 @@ import { FilePanelButton } from "./file-panel-button";
 import { imageSource } from "./image-resource";
 import { ResourceImage } from "./resource-image";
 import { FileUploadMenu } from "./file-upload-menu";
+import { FileDownloadStatus, useFileDownload } from "./use-file-download";
 
 const readOffice = (path: string, signal: AbortSignal) => api<OfficeDocument>(apiPath(path), undefined, signal);
 
@@ -66,6 +67,7 @@ type Props = {
 };
 
 export function FileSidebar(props: Props) {
+  const download = useFileDownload();
   const [panel, setPanel] = useState<"project" | "git">("project");
   const context = {
     projectID: props.project?.id,
@@ -108,6 +110,8 @@ export function FileSidebar(props: Props) {
           panel={panel}
           onSelectPanel={setPanel}
           project={props.project}
+          onDownload={download.download}
+          downloading={download.downloading}
         />
       ) : (
         <>
@@ -117,6 +121,7 @@ export function FileSidebar(props: Props) {
           </p>
         </>
       )}
+      <FileDownloadStatus notice={download.notice} dismiss={download.dismiss} t={props.t} />
       <PanelResizeHandle
         side="right"
         width={props.width}
@@ -145,7 +150,9 @@ function ProjectFiles({
   panel,
   onSelectPanel,
   directoryScope,
-}: Props & { project: Project; panel: "project" | "git"; onSelectPanel: (panel: "project" | "git") => void; directoryScope: string }) {
+  onDownload,
+  downloading,
+}: Props & { project: Project; panel: "project" | "git"; onSelectPanel: (panel: "project" | "git") => void; directoryScope: string; onDownload: (url: string, name: string, t: Translator) => Promise<void>; downloading: boolean }) {
   const ready = !chatID || !!workspace?.available;
   const workspacePath = workspace?.path;
   const [error, setError] = useState("");
@@ -490,8 +497,13 @@ function ProjectFiles({
                       download={file.name}
                       aria-label={t("Download file")}
                       title={t("Download file")}
+                      aria-disabled={downloading}
+                      onClick={(event) => {
+                        event.preventDefault();
+                        if (!downloading) void onDownload(event.currentTarget.href, file.name, t);
+                      }}
                     >
-                      <Download size={14} />
+                      {downloading ? <LoaderCircle size={14} className="stop-spinner" /> : <Download size={14} />}
                     </a>
                   )}
                   <div className="file-preview-controls">

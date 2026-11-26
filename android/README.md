@@ -82,6 +82,13 @@ The camera scanner runs inside the app; no external scanner service is required.
   File image caches distinguish directory scopes, so switching worktrees cannot
   reuse an image from the previous checkout. Source stays selectable while
   native highlighting loads or fails, and horizontal gestures scroll long lines.
+- Project-file downloads ask for a system document destination first, then stream
+  the original response through chunks of at most 256 KiB directly into that
+  document. Downloads have no fixed file-size cap and do not use the 16 MiB
+  JSON/image-preview budget. Completion is reported after the document closes,
+  with the saved path or provider and filename; network and write failures are
+  reported as failures. Changing accounts/servers or closing the Activity cancels
+  the active transfer.
 - The palette icon immediately before the sidebar close button opens device
   appearance/language preferences. Theme tiles and the language listbox remain
   local and reusable; choices update the dialog and workspace immediately

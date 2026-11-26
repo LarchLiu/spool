@@ -74,4 +74,62 @@ func (f *ProjectFiles) Upload(path, name, csrf, language string, source DesktopF
 	return f.transfers.client.encodeResponse(resp)
 }
 
+func validProjectDownloadPath(path string) bool {
+	u, err := url.ParseRequestURI(path)
+	if err != nil || u.IsAbs() || u.Host != "" || u.Fragment != "" {
+		return false
+	}
+	parts := strings.Split(u.Path, "/")
+	if len(parts) != 5 || parts[1] != "api" || (parts[2] != "projects" && parts[2] != "chats") || !chatIDPattern.MatchString(parts[3]) {
+		return false
+	}
+	query, err := url.ParseQuery(u.RawQuery)
+	if err != nil {
+		return false
+	}
+	for _, values := range query {
+		if len(values) != 1 {
+			return false
+		}
+	}
+	if parts[4] == "attachments" && parts[2] == "chats" {
+		return len(query) == 1 && query.Get("id") != ""
+	}
+	if parts[4] != "file" || query.Get("path") == "" || query.Get("download") != "1" {
+		return false
+	}
+	for key := range query {
+		if key != "path" && key != "download" && (key != "workspace" || parts[2] != "chats") {
+			return false
+		}
+	}
+	return true
+}
+
+// Download streams the original file in bounded chunks. Only error responses
+// use the JSON envelope, preserving HTTP status without buffering file bytes.
+func (f *ProjectFiles) Download(path, language string, sink DesktopFileSink) (string, error) {
+	if sink == nil || !validProjectDownloadPath(path) {
+		return "", errors.New("invalid project download")
+	}
+	ctx, done, err := f.transfers.begin()
+	if err != nil {
+		return "", err
+	}
+	defer done()
+	resp, err := f.transfers.client.request(ctx, http.MethodGet, path, nil, "", "", language)
+	if err != nil {
+		return "", errors.New("file download interrupted")
+	}
+	if resp.StatusCode != http.StatusOK {
+		return f.transfers.client.encodeResponse(resp)
+	}
+	defer resp.Body.Close()
+	f.transfers.client.receivedResponse()
+	if err := streamFileDownload(ctx, resp.Body, sink); err != nil {
+		return "", err
+	}
+	return `{"status":200,"body":"{}"}`, nil
+}
+
 func (f *ProjectFiles) Close() { f.transfers.Close() }

@@ -1,6 +1,7 @@
 import assert from "node:assert/strict";
 import { readFile } from "node:fs/promises";
 import test from "node:test";
+import vm from "node:vm";
 import { createElement } from "react";
 import { renderToStaticMarkup } from "react-dom/server";
 import {
@@ -18,6 +19,7 @@ import {
   subscribeDesktopNotifications,
   desktopFileAccessURL,
   subscribeDesktopFileAccess,
+  subscribeDesktopDownload,
   notifyDesktopSessionChanged,
   notifyDesktopViewChanged,
   reportDesktopRenderFailure,
@@ -126,6 +128,27 @@ test("attachment access results validate native event payloads and unsubscribe",
   off();
   assert.equal(events.size, 0);
   subscribeDesktopFileAccess(() => assert.fail("browser subscribed"), {})();
+});
+
+test("native downloads cross the preload bridge, validate results and unsubscribe", async () => {
+  const source = await readFile(new URL("../../cmd/desktop/window_chrome.go", import.meta.url), "utf8");
+  const preload = source.match(/const desktopWindowPreload = `([\s\S]*?)`/)[1];
+  const listeners = new Map();
+  const surface = Object.assign(new EventTarget(), {
+    mygo: { platform: "linux", on: (name, listener) => listeners.set(name, listener) },
+  });
+  vm.runInNewContext(preload, { window: surface, Event, CustomEvent });
+  const received = [];
+  const off = subscribeDesktopDownload(result => received.push(result), surface);
+  const send = listeners.get("spool:download");
+  assert.equal(typeof send, "function", "the native preload must forward download events");
+  for (const invalid of [null, {}, { url: 7, state: "failed" }, { url: "/file", state: "saved" }, { url: "/file", state: "saved", path: "" }, { url: "/file", state: "failed", error: 7 }]) send(invalid);
+  assert.deepEqual(received, []);
+  const results = [{ url: "/file", state: "downloading" }, { url: "/file", state: "saved", path: "/Downloads/报告 (2).pdf" }, { url: "/file", state: "failed", error: "disk full" }];
+  results.forEach(send);
+  assert.deepEqual(received, results);
+  off(); send(results[0]);
+  assert.equal(received.length, 3);
 });
 
 test("desktop notification navigation buffers cold clicks and consumes only native account-scoped targets", () => {

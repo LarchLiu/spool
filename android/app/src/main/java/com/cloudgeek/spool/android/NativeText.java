@@ -138,6 +138,7 @@ final class NativeText {
             case "Could not copy code": value = "无法复制代码"; break;
             case "Could not copy message": value = "无法复制消息"; break;
             case "Could not download or verify the update. Try again.": value = "更新下载或验证失败，请重试。"; break;
+            case "Could not download {name}: {error}": value = "下载 {name} 失败：{error}"; break;
             case "Could not load agent commands. Check project permissions and retry.": value = "无法加载 Agent 命令，请检查项目权限后重试。"; break;
             case "Could not open the system installer.": value = "无法打开系统安装器。"; break;
             case "Could not save avatar": value = "无法保存头像"; break;
@@ -183,11 +184,14 @@ final class NativeText {
             case "Display name (optional)": value = "显示名称（可选）"; break;
             case "Do not show again": value = "不再显示"; break;
             case "Don't ask": value = "不询问"; break;
+            case "Download cancelled": value = "已取消下载"; break;
             case "Download file": value = "下载文件"; break;
             case "Download update": value = "下载更新"; break;
             case "Download v{version}": value = "下载 v{version}"; break;
             case "Download {name}": value = "下载 {name}"; break;
+            case "Downloaded to {path}": value = "下载完成，已保存到 {path}"; break;
             case "Downloading update: {percent}%": value = "正在下载更新：{percent}%"; break;
+            case "Downloading {name}…": value = "正在下载 {name}…"; break;
             case "Drag to reorder": value = "拖动调整顺序"; break;
             case "Each uploaded file must be at most 64 MB": value = "每个上传文件不能超过 64 MB"; break;
             case "Edit files": value = "编辑文件"; break;
@@ -436,6 +440,7 @@ final class NativeText {
             case "Running": value = "运行中"; break;
             case "Save avatar": value = "保存头像"; break;
             case "Save this authorization for future requests.": value = "保存授权，后续请求也会生效。"; break;
+            case "Saving {name}…": value = "正在保存 {name}…"; break;
             case "Saving…": value = "保存中…"; break;
             case "Say hello. Only the two of you can see these messages.": value = "打个招呼吧，消息仅你们双方可见。"; break;
             case "Scan pairing QR code": value = "扫描配对二维码"; break;
@@ -749,6 +754,7 @@ final class NativeText {
             case "Could not copy code": value = "コードをコピーできませんでした"; break;
             case "Could not copy message": value = "メッセージをコピーできませんでした"; break;
             case "Could not download or verify the update. Try again.": value = "更新のダウンロードまたは検証に失敗しました。もう一度お試しください。"; break;
+            case "Could not download {name}: {error}": value = "{name} をダウンロードできませんでした：{error}"; break;
             case "Could not load agent commands. Check project permissions and retry.": value = "エージェントコマンドを読み込めませんでした。プロジェクトの権限を確認して再試行してください。"; break;
             case "Could not open the system installer.": value = "システムのインストーラーを開けませんでした。"; break;
             case "Could not save avatar": value = "アバターを保存できませんでした"; break;
@@ -794,11 +800,14 @@ final class NativeText {
             case "Display name (optional)": value = "表示名（任意）"; break;
             case "Do not show again": value = "今後表示しない"; break;
             case "Don't ask": value = "確認しない"; break;
+            case "Download cancelled": value = "ダウンロードをキャンセルしました"; break;
             case "Download file": value = "ファイルをダウンロード"; break;
             case "Download update": value = "更新をダウンロード"; break;
             case "Download v{version}": value = "ダウンロード v{version}"; break;
             case "Download {name}": value = "{name}をダウンロード"; break;
+            case "Downloaded to {path}": value = "ダウンロード完了、保存先：{path}"; break;
             case "Downloading update: {percent}%": value = "更新をダウンロード中：{percent}%"; break;
+            case "Downloading {name}…": value = "{name} をダウンロード中…"; break;
             case "Drag to reorder": value = "ドラッグして並べ替え"; break;
             case "Each uploaded file must be at most 64 MB": value = "各アップロードファイルは 64 MB 以下にしてください"; break;
             case "Edit files": value = "ファイルを編集"; break;
@@ -1047,6 +1056,7 @@ final class NativeText {
             case "Running": value = "実行中"; break;
             case "Save avatar": value = "アバターを保存"; break;
             case "Save this authorization for future requests.": value = "この承認を今後のリクエストにも適用します。"; break;
+            case "Saving {name}…": value = "{name} を保存中…"; break;
             case "Saving…": value = "保存中…"; break;
             case "Say hello. Only the two of you can see these messages.": value = "挨拶してみましょう。メッセージはお互いにのみ表示されます。"; break;
             case "Scan pairing QR code": value = "Scan pairing QR code"; break;

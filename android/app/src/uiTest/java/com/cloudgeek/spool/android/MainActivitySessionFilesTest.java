@@ -53,10 +53,11 @@ public class MainActivitySessionFilesTest {
             NativeFileBrowser browser = h.get("fileBrowser"); assertNotNull(browser);
             assertEquals("chat-one", browser.state.chat); assertTrue(browser.state.file.getBoolean("external"));
             assertEquals("report.md:2", browser.preview.name.getText().toString());
-            assertTrue(MainActivityGoalTest.ShadowClient.calls.stream().allMatch(call -> call.get(1).startsWith("/api/chats/chat-one/")));
+            assertTrue(MainActivityGoalTest.ShadowClient.calls.stream().filter(call -> call.get(1).contains("/file?") || call.get(1).contains("/files?"))
+                    .allMatch(call -> call.get(1).startsWith("/api/chats/chat-one/")));
             assertTrue(MainActivityGoalTest.ShadowClient.calls.stream().noneMatch(call -> call.get(1).contains("/files?path=%2Fexports")));
-            browser.preview.download.performClick(); run(h);
-            assertTrue(MainActivityGoalTest.ShadowClient.calls.stream().anyMatch(call -> call.get(1).equals("/api/chats/chat-one/file?path=%2Fexports%2Freport.md&download=1")));
+            browser.preview.download.performClick();
+            assertTrue("Download must choose its destination before fetching", h.io.jobs.isEmpty());
             Intent picker = Shadows.shadowOf(h.activity).getNextStartedActivity(); assertNotNull(picker);
             assertEquals(Intent.ACTION_CREATE_DOCUMENT, picker.getAction()); assertEquals("report.md", picker.getStringExtra(Intent.EXTRA_TITLE));
             call(h, "newChat", "project-one"); drain(h);
@@ -96,9 +97,12 @@ public class MainActivitySessionFilesTest {
             assertEquals("report.md:2", browser.preview.name.getText().toString());
             assertEquals("/exports/report.md", browser.state.file.getString("path"));
             assertEquals("one\ntwo\nthree", browser.state.file.getString("content"));
-            assertTrue(MainActivityGoalTest.ShadowClient.calls.stream()
-                    .anyMatch(call -> call.get(1).equals("/api/chats/chat-one/file?path=%2Fexports%2Freport.md")));
-            assertTrue(MainActivityGoalTest.ShadowClient.calls.stream()
+            assertTrue(MainActivityGoalTest.ShadowClient.calls.toString(), MainActivityGoalTest.ShadowClient.calls.stream().anyMatch(call -> {
+                android.net.Uri uri = android.net.Uri.parse(call.get(1));
+                return uri.getPath().equals("/api/chats/chat-one/file") && "/exports/report.md".equals(uri.getQueryParameter("path"))
+                        && uri.getQueryParameter("download") == null;
+            }));
+            assertTrue(MainActivityGoalTest.ShadowClient.calls.stream().filter(call -> call.get(1).contains("/file?") || call.get(1).contains("/files?"))
                     .allMatch(call -> call.get(1).startsWith("/api/chats/chat-one/")));
         }
     }

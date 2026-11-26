@@ -3,12 +3,109 @@ package spoolnet
 import (
 	"bytes"
 	"encoding/json"
+	"errors"
 	"io"
 	"net/http"
 	"strings"
 	"sync/atomic"
 	"testing"
 )
+
+type projectDownloadSink struct {
+	write func([]byte) error
+}
+
+func (s projectDownloadSink) Write(data []byte) error { return s.write(data) }
+
+func TestProjectFilesStreamLargeDownloadsWithSessionAndWorkspace(t *testing.T) {
+	const size = 70 << 20
+	client := nativeFixture(t, func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Path == "/api/login" {
+			http.SetCookie(w, &http.Cookie{Name: "spool_session", Value: "download-fixture", Path: "/", Secure: true, HttpOnly: true})
+			io.WriteString(w, `{}`)
+			return
+		}
+		cookie, err := r.Cookie("spool_session")
+		if err != nil || cookie.Value != "download-fixture" || r.TLS == nil || r.Host != "example.com" ||
+			r.Header.Get("Origin") != "https://example.com" || r.Header.Get("X-UI-Language") != "zh-CN" ||
+			r.URL.Path != "/api/chats/chat-one/file" || r.URL.Query().Get("workspace") != "/repo/work tree" || r.URL.Query().Get("path") != "/exports/数据.bin" {
+			t.Error("download lost authenticated transport or file scope", r.URL)
+		}
+		w.Header().Set("Content-Type", "application/octet-stream")
+		chunk := bytes.Repeat([]byte{0, 255, 128, 10}, (64<<10)/4)
+		for n := 0; n < size/len(chunk); n++ {
+			if _, err := w.Write(chunk); err != nil {
+				return
+			}
+		}
+	})
+	if _, err := client.Request("POST", "/api/login", `{}`, "", "zh-CN"); err != nil {
+		t.Fatal(err)
+	}
+	files := client.OpenProjectFiles()
+	t.Cleanup(files.Close)
+	received := 0
+	result, err := files.Download("/api/chats/chat-one/file?path=%2Fexports%2F%E6%95%B0%E6%8D%AE.bin&download=1&workspace=%2Frepo%2Fwork%20tree", "zh-CN", projectDownloadSink{func(data []byte) error {
+		if len(data) > 256<<10 {
+			t.Fatal("unbounded download chunk", len(data))
+		}
+		for i, value := range data {
+			if value != []byte{0, 255, 128, 10}[(received+i)%4] {
+				t.Fatal("download bytes changed")
+			}
+		}
+		received += len(data)
+		return nil
+	}})
+	if err != nil || received != size || !strings.Contains(result, `"status":200`) {
+		t.Fatal("large download failed", received, result, err)
+	}
+}
+
+func TestProjectDownloadErrorsCancellationAndPathValidation(t *testing.T) {
+	var calls atomic.Int32
+	client := nativeFixture(t, func(w http.ResponseWriter, r *http.Request) {
+		calls.Add(1)
+		if r.URL.Query().Get("path") == "denied" {
+			w.WriteHeader(403)
+			io.WriteString(w, `{"error":"File is protected"}`)
+			return
+		}
+		w.Header().Set("Content-Type", "application/octet-stream")
+		io.WriteString(w, "first chunk")
+		w.(http.Flusher).Flush()
+		<-r.Context().Done()
+	})
+	files := client.OpenProjectFiles()
+	t.Cleanup(files.Close)
+	sink := projectDownloadSink{func([]byte) error { return errors.New("disk full") }}
+	for _, path := range []string{"https://elsewhere/api/projects/one/file?path=a&download=1", "/api/projects/one/file?path=a", "/api/projects/one/file?path=a&download=1&path=b", "/api/projects/one/file?path=a&download=1&workspace=/repo", "/api/chats/one/messages?download=1"} {
+		if _, err := files.Download(path, "en", sink); err == nil {
+			t.Errorf("accepted %s", path)
+		}
+	}
+	if calls.Load() != 0 {
+		t.Fatal("invalid download reached network")
+	}
+	result, err := files.Download("/api/projects/one/file?path=denied&download=1", "en", sink)
+	if err != nil || !strings.Contains(result, `"status":403`) || !strings.Contains(result, "File is protected") {
+		t.Fatal("permission failure lost", result, err)
+	}
+	if _, err := files.Download("/api/projects/one/file?path=large&download=1", "en", sink); err == nil || err.Error() != "disk full" {
+		t.Fatal("write failure hidden", err)
+	}
+	started := make(chan struct{}, 1)
+	resultChan := make(chan error, 1)
+	go func() {
+		_, err := files.Download("/api/chats/one/file?path=large&download=1", "en", projectDownloadSink{func([]byte) error { started <- struct{}{}; return nil }})
+		resultChan <- err
+	}()
+	receiveDesktop(t, started)
+	files.Close()
+	if err := receiveDesktop(t, resultChan); err == nil {
+		t.Fatal("cancelled download succeeded")
+	}
+}
 
 func TestProjectFilesStreamMultipartToSelectedWorkspaceWithSessionAndCSRF(t *testing.T) {
 	payload := bytes.Repeat([]byte{0, 255, 128, 10}, (17<<20)/4)

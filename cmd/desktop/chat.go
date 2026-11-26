@@ -156,6 +156,7 @@ func (p *panel) loadDesktopServerChat(id, address string) error {
 			p.chatView = view
 		}
 		page := view.Page()
+		observeDesktopDownloads(page)
 		// Register guards before the first navigation. Never trust additional
 		// origins or load external content into a privileged desktop window.
 		page.OnWillNavigate(func(e *mygo.NavigateEvent) {
@@ -377,6 +378,10 @@ func (p *panel) loadDesktopServerChat(id, address string) error {
 			}
 		})
 		page.OnDidFailLoad(func(err *mygo.LoadError) {
+			if download, ok := desktopDownloadLoadError(state.address, err); ok {
+				_ = desktopDownloadChanged.EmitPage(page, download)
+				return
+			}
 			if p.serverChats[id] != state {
 				return
 			}

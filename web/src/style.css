@@ -4811,6 +4811,33 @@ option {
   min-height: 0;
   min-width: 0;
 }
+.file-download-status {
+  display: flex;
+  flex-shrink: 0;
+  align-items: flex-start;
+  gap: 8px;
+  max-height: 30%;
+  overflow: auto;
+  padding: 9px 10px 9px 14px;
+  border-top: 1px solid var(--line);
+  background: var(--notice-bg);
+  color: var(--notice-text);
+  font-size: 12px;
+  line-height: 1.7;
+}
+.file-download-status p {
+  flex: 1;
+  min-width: 0;
+  margin: 0;
+  overflow-wrap: anywhere;
+}
+.file-download-status p svg {
+  margin-right: 6px;
+  vertical-align: middle;
+}
+.file-download-status button {
+  flex-shrink: 0;
+}
 .file-preview-header {
   display: flex;
   flex-shrink: 0;

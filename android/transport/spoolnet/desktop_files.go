@@ -189,12 +189,16 @@ func (f *DesktopFiles) Download(path, language string, sink DesktopFileSink) err
 		return err
 	}
 	defer resp.Body.Close()
+	return streamFileDownload(ctx, resp.Body, sink)
+}
+
+func streamFileDownload(ctx context.Context, body io.Reader, sink DesktopFileSink) error {
 	buffer := make([]byte, 256<<10)
 	for {
 		if err := ctx.Err(); err != nil {
 			return err
 		}
-		n, err := resp.Body.Read(buffer)
+		n, err := body.Read(buffer)
 		if n > 0 {
 			if err := ctx.Err(); err != nil {
 				return err
@@ -207,7 +211,7 @@ func (f *DesktopFiles) Download(path, language string, sink DesktopFileSink) err
 			return nil
 		}
 		if err != nil {
-			return errors.New("desktop download interrupted")
+			return errors.New("file download interrupted")
 		}
 	}
 }

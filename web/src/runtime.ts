@@ -413,6 +413,34 @@ export type DesktopFileAccessResult = {
   error?: string;
 };
 
+export type DesktopDownload = {
+  url: string;
+  state: "downloading" | "saved" | "failed";
+  path?: string;
+  error?: string;
+};
+
+export function subscribeDesktopDownload(
+  listener: (result: DesktopDownload) => void,
+  surface: unknown = globalThis,
+): () => void {
+  return subscribeDesktopEvent(
+    "spool:download",
+    (event) => {
+      const result: unknown = (event as CustomEvent).detail;
+      if (
+        typeof result === "object" && result !== null &&
+        "url" in result && typeof result.url === "string" &&
+        "state" in result &&
+        (result.state === "downloading" || result.state === "failed" ||
+          (result.state === "saved" && "path" in result && typeof result.path === "string" && !!result.path)) &&
+        (!("error" in result) || typeof result.error === "string")
+      ) listener(result as DesktopDownload);
+    },
+    surface,
+  );
+}
+
 export function subscribeDesktopFileAccess(
   listener: (result: DesktopFileAccessResult) => void,
   surface: unknown = globalThis,

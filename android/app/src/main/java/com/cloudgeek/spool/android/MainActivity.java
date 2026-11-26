@@ -55,6 +55,7 @@ import java.util.Map;
 import java.util.UUID;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
+import java.util.concurrent.atomic.AtomicReference;
 
 /** All workspace views are native. Only explicit external links use a browser. */
 public final class MainActivity extends Activity {
@@ -317,6 +318,8 @@ public final class MainActivity extends Activity {
     private NativeAvatarPicker avatarDialog;
     private NativeImagePreview imagePreview;
     private PendingDownload pendingDownload;
+    private final AtomicReference<spoolnet.ProjectFiles> activeDownload = new AtomicReference<>();
+    private Toast downloadToast;
     private boolean downloading;
     private int downloadRequest;
     private final NativeProfiles profileCache = new NativeProfiles();
@@ -337,8 +340,12 @@ public final class MainActivity extends Activity {
 
     private static final class PendingDownload {
         final NativeFileData file;
+        final String name, path;
+        final Client client;
         final int session;
-        PendingDownload(NativeFileData file, int session) { this.file = file; this.session = session; }
+        PendingDownload(NativeFileData file, String name, String path, Client client, int session) {
+            this.file = file; this.name = name; this.path = path; this.client = client; this.session = session;
+        }
     }
 
     private static final class Draft {
@@ -1718,6 +1725,8 @@ public final class MainActivity extends Activity {
         syntax.clear();
         closeImagePreview();
         pendingDownload = null;
+        closeActiveDownload();
+        if (downloadToast != null) downloadToast.cancel();
         downloading = false;
         downloadRequest++;
         ++selectionEpoch;
@@ -4809,15 +4818,49 @@ public final class MainActivity extends Activity {
             PendingDownload selected = pendingDownload;
             pendingDownload = null;
             downloading = false;
-            if (selected == null || selected.session != authEpoch || resultCode != RESULT_OK || data == null || data.getData() == null) return;
+            if (selected == null || selected.session != authEpoch) return;
+            if (resultCode != RESULT_OK) { downloadNotice("Download cancelled"); return; }
+            if (data == null || data.getData() == null) { downloadFailed(selected.name, new IOException("No save destination selected")); return; }
             Uri destination = data.getData();
-            if (!"content".equals(destination.getScheme())) { toast(new IOException("Only document-provider destinations are supported")); return; }
-            int token = generation;
+            if (!"content".equals(destination.getScheme())) { downloadFailed(selected.name, new IOException("Only document-provider destinations are supported")); return; }
+            downloading = true;
+            int token = generation, request = ++downloadRequest;
+            downloadNotice(selected.file == null ? "Downloading {name}…" : "Saving {name}…", "name", selected.name);
+            String downloadLocale = locale();
             io.execute(() -> {
-                try (OutputStream output = getContentResolver().openOutputStream(destination, "wt")) {
-                    if (output == null) throw new IOException("Cannot write file");
-                    output.write(selected.file.bytes);
-                } catch (Exception error) { post(token, () -> { if (selected.session == authEpoch) toast(error); }); }
+                if (token != generation || selected.session != authEpoch || request != downloadRequest) return;
+                try {
+                    try (OutputStream output = getContentResolver().openOutputStream(destination, "wt")) {
+                        if (output == null) throw new IOException("Cannot write file");
+                        if (selected.file != null) output.write(selected.file.bytes);
+                        else {
+                            spoolnet.ProjectFiles transfer = selected.client.openProjectFiles();
+                            activeDownload.set(transfer);
+                            try {
+                                if (token != generation || selected.session != authEpoch || request != downloadRequest) return;
+                                decodeResponse(transfer.download(selected.path, downloadLocale, chunk -> {
+                                    if (destroyed || token != generation || selected.session != authEpoch || request != downloadRequest)
+                                        throw new IOException("Download cancelled");
+                                    output.write(chunk);
+                                }));
+                            } finally {
+                                transfer.close();
+                                activeDownload.compareAndSet(transfer, null);
+                            }
+                        }
+                    }
+                    String location = NativeDownloadDestination.describe(this, destination, selected.name);
+                    post(token, () -> {
+                        if (selected.session != authEpoch || request != downloadRequest) return;
+                        downloading = false;
+                        downloadNotice("Downloaded to {path}", "path", location);
+                    });
+                } catch (Exception error) { post(token, () -> {
+                    if (selected.session != authEpoch || request != downloadRequest) return;
+                    downloading = false;
+                    downloadFailed(selected.name, error);
+                    if (error instanceof ApiFailure && ((ApiFailure) error).status == 401) expire();
+                }); }
             });
             return;
         }
@@ -5605,8 +5648,18 @@ public final class MainActivity extends Activity {
         final int session = authEpoch;
         final Client captured = client;
         NativeImagePreview preview = showImagePreview(resource.name, () -> {
+            if (resource.local == null && !NativeFileData.inlineImage(resource.source) && !NativeFileData.toolImagePath(resource.source)) {
+                Uri uri = Uri.parse(resource.source);
+                if (uri.getPath().endsWith("/file")) {
+                    Uri.Builder original = uri.buildUpon().clearQuery();
+                    for (String key : uri.getQueryParameterNames()) if (!key.equals("image") && !key.equals("download")) original.appendQueryParameter(key, uri.getQueryParameter(key));
+                    downloadFile(original.appendQueryParameter("download", "1").build().toString(), resource.name);
+                } else downloadFile(resource.source, resource.name);
+                return;
+            }
             if (downloading) return;
             downloading = true;
+            downloadNotice("Downloading {name}…", "name", resource.name);
             int token = generation, request = ++downloadRequest;
             io.execute(() -> {
                 try {
@@ -5617,7 +5670,7 @@ public final class MainActivity extends Activity {
                     });
                 } catch (Exception error) { post(token, () -> {
                     if (session != authEpoch || request != downloadRequest) return;
-                    downloading = false; toast(error);
+                    downloading = false; downloadFailed(resource.name, error);
                 }); }
             });
         });
@@ -5637,43 +5690,46 @@ public final class MainActivity extends Activity {
 
     private void downloadFile(String path, String name) {
         if (downloading) return;
-        downloading = true;
-        int token = generation, session = authEpoch, request = ++downloadRequest;
-        Client captured = client;
-        io.execute(() -> {
-            try {
-                if (token != generation) return;
-                NativeFileData file = loadBinary(captured, path);
-                post(token, () -> {
-                    if (session != authEpoch || request != downloadRequest) return;
-                    downloading = false;
-                    chooseDownload(file, name, session);
-                });
-            } catch (Exception error) {
-                post(token, () -> {
-                    if (session != authEpoch || request != downloadRequest) return;
-                    downloading = false;
-                    if (error instanceof ApiFailure && ((ApiFailure) error).status == 401 || error instanceof NativeImageFailure && ((NativeImageFailure) error).status == 401) expire();
-                    else toast(error);
-                });
-            }
-        });
+        if (!NativeFileData.allowedPath(path) || client == null) { downloadFailed(name, new IOException("File unavailable")); return; }
+        chooseDownload(new PendingDownload(null, name, path, client, authEpoch), "application/octet-stream");
+    }
+
+    private void closeActiveDownload() {
+        // Detach before closing: the IO worker can finish while the UI cancels.
+        spoolnet.ProjectFiles transfer = activeDownload.getAndSet(null);
+        if (transfer != null) transfer.close();
     }
 
     private void chooseDownload(NativeFileData file, String name, int session) {
-        if (session != authEpoch || downloading || destroyed || !foreground) return;
-        String filename = name.replaceAll("[\\\\/\\p{Cntrl}]", "_");
+        chooseDownload(new PendingDownload(file, name, "", null, session), file.mediaType);
+    }
+
+    private void chooseDownload(PendingDownload selected, String mediaType) {
+        if (selected.session != authEpoch || downloading || destroyed || !foreground) return;
+        String filename = selected.name.replaceAll("[\\\\/\\p{Cntrl}]", "_");
         if (filename.isEmpty()) filename = "attachment";
-        pendingDownload = new PendingDownload(file, session);
+        pendingDownload = new PendingDownload(selected.file, filename, selected.path, selected.client, selected.session);
         downloading = true;
         try {
             startActivityForResult(new Intent(Intent.ACTION_CREATE_DOCUMENT).addCategory(Intent.CATEGORY_OPENABLE)
-                    .setType(file.mediaType).putExtra(Intent.EXTRA_TITLE, filename), SAVE_FILE);
-        } catch (ActivityNotFoundException error) {
+                    .setType(mediaType).putExtra(Intent.EXTRA_TITLE, filename), SAVE_FILE);
+        } catch (RuntimeException error) {
             pendingDownload = null;
             downloading = false;
-            toast(error);
+            downloadFailed(filename, error);
         }
+    }
+
+    private void downloadNotice(String key, Object... values) {
+        if (downloadToast != null) downloadToast.cancel();
+        downloadToast = Toast.makeText(this, NativeText.translate(key, locale(), values), Toast.LENGTH_LONG);
+        downloadToast.show();
+    }
+
+    private void downloadFailed(String name, Throwable error) {
+        String detail = error.getMessage();
+        if (detail == null || detail.isEmpty()) detail = NativeText.translate("Request failed", locale());
+        downloadNotice("Could not download {name}: {error}", "name", name, "error", detail);
     }
 
     private void openMessageLink(String address) {
@@ -6132,6 +6188,8 @@ public final class MainActivity extends Activity {
         avatarImages.clear();
         fileImages.clear();
         pendingDownload = null;
+        closeActiveDownload();
+        if (downloadToast != null) downloadToast.cancel();
         // Revoked image reads skip their work; let queued animation-surface cleanup finish.
         imageWorker.shutdown();
         syntax.close();
