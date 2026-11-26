@@ -41,7 +41,15 @@ import {
 import "./git-panel.css";
 
 function gitCommitTooltip(commit: GitCommit) {
-  return `${commit.id}\n\n${commit.message || commit.subject}`;
+  const metadata = [
+    commit.author,
+    commit.time ? new Date(commit.time * 1000).toLocaleString() : "",
+  ]
+    .filter(Boolean)
+    .join(" · ");
+  return [metadata, commit.id, commit.message || commit.subject]
+    .filter(Boolean)
+    .join("\n\n");
 }
 
 function GitCommitBadges({ commit, t }: { commit: GitCommit; t: Translator }) {

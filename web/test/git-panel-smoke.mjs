@@ -203,10 +203,11 @@ try {
       await page.keyboard.press("Escape"); assert.equal(mutations.length, 0, "Cancel must not write to Git");
       const latestCommit = page.locator(".git-last-commit");
       await latestCommit.getByText("Latest commit summary", { exact: true }).waitFor();
+      const commitMetadata = await page.evaluate(() => `Developer · ${new Date(1794900000 * 1000).toLocaleString()}`);
       await latestCommit.locator("span").hover();
-      assert.equal(await latestCommit.getAttribute("title"), `${commit}\n\n${lastMessage}`, "Latest commit hover includes the full SHA and complete message, like History");
+      assert.equal(await latestCommit.getAttribute("title"), `${commitMetadata}\n\n${commit}\n\n${lastMessage}`, "Latest commit hover starts with author and local date/time, followed by the full SHA and complete message");
       await latestCommit.locator("code").hover();
-      assert.equal(await latestCommit.getAttribute("title"), `${commit}\n\n${lastMessage}`, "Hovering the short SHA shows the same commit information");
+      assert.equal(await latestCommit.getAttribute("title"), `${commitMetadata}\n\n${commit}\n\n${lastMessage}`, "Hovering the short SHA shows the same commit information");
       const commitInput = page.getByRole("textbox", { name: "Commit message", exact: true });
       assert.ok(await commitInput.isVisible(), "The commit input is expanded by default");
       assert.equal(await commitInput.inputValue(), "");
@@ -299,7 +300,7 @@ try {
       await page.locator(".git-history-list").getByText("v1.2.0", { exact: true }).waitFor();
       const historyRow = page.locator(".git-history-list > .file-panel-button").first();
       await historyRow.locator("strong").hover();
-      assert.equal(await historyRow.getAttribute("title"), `${commit}\n\n${detailMessage}`, "History hover includes the full SHA and complete commit message");
+      assert.equal(await historyRow.getAttribute("title"), `${commitMetadata}\n\n${commit}\n\n${detailMessage}`, "History hover starts with author and local date/time, followed by the full SHA and complete commit message");
       assert.deepEqual(await page.locator(".git-history-list .git-history-badge").evaluateAll(badges => badges.map(badge => badge.getAttribute("aria-label") || badge.textContent)), ["v1.2.0", "Not pushed"]);
       await page.locator(".file-sidebar").screenshot({ path: path.join(output, `history-${width}-${theme}.png`) });
       await page.getByText("Fix Git panel preview", { exact: true }).click();
@@ -360,7 +361,7 @@ try {
       await commitInput.fill("Commit from Git panel");
       await commitInput.press(width === 1280 ? "Meta+Enter" : "Control+Enter");
       await page.locator(".git-last-commit").getByText("Commit from Git panel", { exact: true }).waitFor();
-      assert.equal(await latestCommit.getAttribute("title"), `${commit}\n\nCommit from Git panel`, "Latest commit hover updates after a commit");
+      assert.equal(await latestCommit.getAttribute("title"), `${commitMetadata}\n\n${commit}\n\nCommit from Git panel`, "Latest commit hover updates after a commit");
       assert.ok(await commitInput.isVisible(), "A successful commit keeps the input expanded");
       assert.equal(await commitInput.inputValue(), "", "A successful commit clears its message");
       await page.getByRole("button", { name: "Git remote actions", exact: true }).click();
