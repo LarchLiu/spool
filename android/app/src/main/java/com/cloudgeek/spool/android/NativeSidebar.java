@@ -53,6 +53,15 @@ final class NativeSidebar extends LinearLayout {
     private Runnable restoreScroll;
     private BiConsumer<JSONObject, View> chatOptions = (value, anchor) -> {};
     private NativeSessionNotifications notifications = new NativeSessionNotifications();
+    private final Runnable refreshTimes = this::refreshTimes;
+
+    private void refreshTimes() {
+        removeCallbacks(refreshTimes);
+        if (!active || !isAttachedToWindow() || !isShown() || getWindowVisibility() != VISIBLE) return;
+        long now = System.currentTimeMillis();
+        for (NativeChatLink row : chatRows) row.refreshTime(now);
+        postDelayed(refreshTimes, 60_000);
+    }
 
     void notifications(NativeSessionNotifications value) {
         notifications = value;
@@ -288,7 +297,11 @@ final class NativeSidebar extends LinearLayout {
         if (active) footer();
     }
     private void cancelScrollRestore() { if (restoreScroll != null) scroll.removeCallbacks(restoreScroll); restoreScroll = null; }
-    void deactivate() { active = false; epoch++; cancelScrollRestore(); for (NativeChatLink row : chatRows) if (row.operators != null) row.operators.deactivate(); }
+    void deactivate() { active = false; epoch++; cancelScrollRestore(); removeCallbacks(refreshTimes); for (NativeChatLink row : chatRows) if (row.operators != null) row.operators.deactivate(); }
+    @Override protected void onAttachedToWindow() { super.onAttachedToWindow(); refreshTimes(); }
+    @Override protected void onVisibilityChanged(View changed, int visibility) { super.onVisibilityChanged(changed, visibility); refreshTimes(); }
+    @Override protected void onWindowVisibilityChanged(int visibility) { super.onWindowVisibilityChanged(visibility); refreshTimes(); }
+    @Override public void onWindowFocusChanged(boolean focused) { super.onWindowFocusChanged(focused); if (focused) refreshTimes(); }
     @Override protected void onDetachedFromWindow() { deactivate(); super.onDetachedFromWindow(); }
     @Override protected void onDraw(Canvas canvas) { super.onDraw(canvas); border.setColor(ui.line); canvas.drawRect(getWidth() - ui.dp(1), 0, getWidth(), getHeight(), border); }
 }

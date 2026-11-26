@@ -9,6 +9,16 @@ import org.junit.Test;
 public class NativeMessageTimeTest {
     private static long instant(String value) { return Instant.parse(value).toEpochMilli(); }
 
+    @Test public void sidebarAgesMatchWebUnitsAndBoundaries() {
+        long now = instant("2026-11-26T12:34:00Z");
+        long[] ages = {0, 59_999, 60_000, 119_999, 3_599_999, 3_600_000, 86_399_999, 86_400_000,
+                2_591_999_999L, 2_592_000_000L, 5_184_000_000L, 31_535_999_999L, 31_536_000_000L, 63_072_000_000L};
+        String[] expected = {"now", "now", "1m", "1m", "59m", "1h", "23h", "1d", "29d", "1mo", "2mo", "12mo", "1y", "2y"};
+        for (int i = 0; i < ages.length; i++) assertEquals(expected[i], NativeMessageTime.sidebarAge(now - ages[i], now));
+        assertEquals("now", NativeMessageTime.sidebarAge(now + 60_000, now));
+        assertNull(NativeMessageTime.sidebarAge(0, now)); assertNull(NativeMessageTime.sidebarAge(-1, now));
+    }
+
     @Test public void repeatedBindingsReuseResultsButDayYearLocaleAndZoneChangesStillUpdate() {
         long timestamp = instant("2026-11-08T03:00:00Z"); TimeZone utc = TimeZone.getTimeZone("UTC");
         NativeMessageTime first = NativeMessageTime.format(timestamp, "en", timestamp, utc);

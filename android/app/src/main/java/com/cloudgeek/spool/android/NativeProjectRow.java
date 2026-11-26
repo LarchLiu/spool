@@ -2,6 +2,7 @@ package com.cloudgeek.spool.android;
 
 import android.os.Build;
 import android.view.Gravity;
+import android.view.MotionEvent;
 import android.view.View;
 import android.widget.FrameLayout;
 import android.widget.ImageView;
@@ -23,7 +24,7 @@ final class NativeProjectRow extends LinearLayout {
     final LinearLayout status;
     private final NativeUi ui;
     private String projectID = "", statusSignature = "";
-    private boolean expanded;
+    private boolean expanded, pointerHovered;
 
     NativeProjectRow(NativeUi ui, Runnable expand, Runnable newChat) {
         super(ui.context); this.ui = ui; setGravity(Gravity.CENTER_VERTICAL); setAddStatesFromChildren(true); setBackground(ui.states(0, 9, 0, ui.hover, 0));
@@ -34,6 +35,17 @@ final class NativeProjectRow extends LinearLayout {
         status = ui.row(); status.setTag("project-chat-status"); status.setVisibility(GONE); status.setImportantForAccessibility(IMPORTANT_FOR_ACCESSIBILITY_NO_HIDE_DESCENDANTS); addView(status, new LayoutParams(-2, ui.dp(16)));
         create = new FrameLayout(ui.context) { @Override public void setEnabled(boolean enabled) { super.setEnabled(enabled); setAlpha(enabled ? 1 : .45f); } }; create.setFocusable(true); create.setBackground(ui.states(0, 99, 0, ui.controlHover, 0)); create.setOnClickListener(view -> newChat.run());
         create.addView(ui.decorativeIcon("plus", 14), new FrameLayout.LayoutParams(ui.dp(14), ui.dp(14), Gravity.CENTER)); LayoutParams action = new LayoutParams(ui.dp(27), ui.dp(27)); action.setMarginEnd(ui.dp(4)); addView(create, action);
+    }
+
+    @Override public boolean dispatchHoverEvent(MotionEvent event) {
+        pointerHovered = event.getActionMasked() != MotionEvent.ACTION_HOVER_EXIT;
+        updateStatusVisibility();
+        return super.dispatchHoverEvent(event);
+    }
+
+    private void updateStatusVisibility() {
+        status.setVisibility(status.getChildCount() == 0 ? GONE : VISIBLE);
+        status.setAlpha(pointerHovered ? 0 : 1);
     }
     void bind(JSONObject project, boolean open, boolean posting) {
         projectID = project.optString("id"); expanded = open; statusSignature = ""; status.removeAllViews(); status.setVisibility(GONE);
@@ -83,7 +95,7 @@ final class NativeProjectRow extends LinearLayout {
             LayoutParams at = new LayoutParams(ui.dp(16), ui.dp(16)); if (status.getChildCount() > 0) at.setMarginStart(ui.dp(4)); status.addView(view, at);
             description.append(", ").append(label);
         }
-        status.setVisibility(running || !pending.isEmpty() ? VISIBLE : GONE);
+        updateStatusVisibility();
         toggle.setContentDescription(description.toString());
     }
 }

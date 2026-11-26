@@ -392,6 +392,22 @@ try {
           );
           await toggleProject.click();
           await expectProjectStatuses([]);
+          await page.mouse.move(1100, 850);
+          assert.ok(await summary.isVisible());
+          const expectSummaryAtRight = async () => {
+            const bounds = await summary.boundingBox();
+            const rowBounds = await project
+              .locator(".project-row")
+              .boundingBox();
+            assert.ok(
+              Math.abs(
+                rowBounds.x + rowBounds.width - bounds.x - bounds.width - 9,
+              ) < 1,
+              "Collapsed project status aligns with the conversation rows' right edge",
+            );
+            return rowBounds;
+          };
+          await expectSummaryAtRight();
           assert.equal(await project.locator(".project-chats").count(), 0);
           assert.equal(
             await page
@@ -422,15 +438,47 @@ try {
             "Repeated notification kinds only appear once, including off-page conversations",
           );
           const iconBounds = await summary.boundingBox();
-          const newChatBounds = await project
-            .locator(".project-new")
-            .boundingBox();
           const toggleBounds = await toggleProject.boundingBox();
           assert.ok(toggleBounds.x + toggleBounds.width <= iconBounds.x + 1);
-          assert.ok(
-            iconBounds.x + iconBounds.width <= newChatBounds.x + 1,
-            "Icons do not overlap the new-chat action",
+          const projectBounds = await expectSummaryAtRight();
+          const loading = summary.locator('[role="status"]');
+          const loadingAnimation = await loading.evaluateHandle((element) => ({
+            animation: element.getAnimations()[0],
+            time: element.getAnimations()[0].currentTime,
+          }));
+          await project.locator(".project-row").hover();
+          assert.equal(
+            await summary.evaluate(
+              (element) => getComputedStyle(element).opacity,
+            ),
+            "0",
+            "Hover hides project statuses",
           );
+          assert.ok(await project.locator(".project-new").isVisible());
+          assert.deepEqual(
+            await project.locator(".project-row").boundingBox(),
+            projectBounds,
+          );
+          await page.mouse.move(1100, 850);
+          assert.equal(
+            await summary.evaluate(
+              (element) => getComputedStyle(element).opacity,
+            ),
+            "1",
+            "Statuses return after hover",
+          );
+          assert.ok(
+            await loading.evaluate((element, previous) => {
+              const animation = element.getAnimations()[0];
+              return (
+                animation === previous.animation &&
+                animation.playState === "running" &&
+                animation.currentTime >= previous.time
+              );
+            }, loadingAnimation),
+            "Hover preserves the running animation and its progress",
+          );
+          await loadingAnimation.dispose();
           await toggleProject.click();
           assert.equal(
             await summary.count(),

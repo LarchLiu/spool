@@ -59,6 +59,15 @@ final class NativeMessageTime {
     static long formatterCreates() { return CACHE.get().creates; }
     static int cachedResults() { return CACHE.get().results.size(); }
 
+    static String sidebarAge(long timestamp, long now) {
+        if (timestamp <= 0 || timestamp > 8_640_000_000_000_000L) return null;
+        long minutes = Math.max(0, (now - timestamp) / 60_000);
+        long[] sizes = {525_600, 43_200, 1_440, 60, 1};
+        String[] units = {"y", "mo", "d", "h", "m"};
+        for (int i = 0; i < sizes.length; i++) if (minutes >= sizes[i]) return (minutes / sizes[i]) + units[i];
+        return "now";
+    }
+
     static NativeMessageTime format(long timestamp, String locale, long now, TimeZone zone) {
         if (timestamp <= 0 || timestamp > 8_640_000_000_000_000L) return null;
         Calendar current = Calendar.getInstance(zone, Locale.ROOT), date = Calendar.getInstance(zone, Locale.ROOT);

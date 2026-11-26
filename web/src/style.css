@@ -330,7 +330,8 @@ button:disabled {
   margin: 0 0 5px;
 }
 .project-row {
-  display: flex;
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
   align-items: center;
   min-width: 0;
   height: 31px;
@@ -365,11 +366,20 @@ button:disabled {
 }
 .project-chat-status {
   display: flex;
+  grid-area: 1 / 2;
+  justify-self: end;
   align-items: center;
   flex-shrink: 0;
   gap: 4px;
+  margin-right: 9px;
+}
+.project-row:hover .project-chat-status,
+.project-row:has(:focus-visible) .project-chat-status {
+  opacity: 0;
 }
 .project-new {
+  grid-area: 1 / 2;
+  justify-self: end;
   opacity: 0;
   width: 27px;
   height: 27px;
@@ -379,7 +389,7 @@ button:disabled {
   border-radius: 50%;
 }
 .project-row:hover .project-new,
-.project-row:focus-within .project-new {
+.project-row:has(:focus-visible) .project-new {
   opacity: 1;
 }
 .nav-chat {

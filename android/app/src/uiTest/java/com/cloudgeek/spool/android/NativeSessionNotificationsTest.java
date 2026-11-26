@@ -4,6 +4,7 @@ import static org.junit.Assert.*;
 import android.app.Activity;
 import android.graphics.Bitmap;
 import android.graphics.Canvas;
+import android.view.MotionEvent;
 import android.view.View;
 import java.io.File;
 import org.json.JSONArray;
@@ -27,6 +28,65 @@ public class NativeSessionNotificationsTest {
     private void layout(View view, int width) {
         view.measure(View.MeasureSpec.makeMeasureSpec(width, View.MeasureSpec.EXACTLY), View.MeasureSpec.makeMeasureSpec(800, View.MeasureSpec.EXACTLY));
         view.layout(0, 0, width, 800);
+    }
+    private void hover(View view, int action) {
+        MotionEvent event = MotionEvent.obtain(0, 0, action, 12, 12, 0);
+        event.setSource(android.view.InputDevice.SOURCE_MOUSE);
+        try { view.dispatchGenericMotionEvent(event); } finally { event.recycle(); }
+    }
+
+    @Test public void idleChatAgesRefreshInEverySidebarCopyAndYieldToNotificationsAndHover() throws Exception {
+        RuntimeEnvironment.setQualifiers("w360dp-h800dp-mdpi");
+        try (ActivityController<Activity> controller = Robolectric.buildActivity(Activity.class).setup()) {
+            NativeUi ui = new NativeUi(controller.get(), false, "en");
+            NativeSidebarState choices = new NativeSidebarState(); choices.togglePin("chat-one");
+            NativeSidebar sidebar = new NativeSidebar(ui, choices, id -> new JSONObject(), () -> {}, id -> {}, id -> {}, () -> {}, () -> {}, () -> {});
+            controller.get().setContentView(sidebar);
+            NativeSessionNotifications states = new NativeSessionNotifications(); sidebar.notifications(states);
+            long now = System.currentTimeMillis();
+            JSONArray projects = new JSONArray().put(new JSONObject().put("id", "project-one").put("name", "Project"));
+            JSONObject first = chat("chat-one", "project-one", "idle").put("updated_at", now);
+            JSONArray chats = new JSONArray().put(first).put(chat("chat-two", "project-one", "idle").put("updated_at", now - 5_184_000_000L));
+            sidebar.bind(new JSONObject().put("id", "alice"), projects, chats, "project-one", "chat-one", "codex", false);
+            layout(sidebar, 360);
+            NativeChatLink original = sidebar.chatRows.get(0);
+            int copies = 0;
+            for (NativeChatLink row : sidebar.chatRows) {
+                assertEquals(row.chatID.equals("chat-one") ? "now" : "2mo", row.age.getText().toString());
+                assertEquals(View.VISIBLE, row.age.getVisibility());
+                assertTrue(row.title.getRight() <= row.age.getLeft());
+                assertEquals(row.open.getWidth(), row.age.getRight());
+                assertTrue(row.open.getContentDescription().toString().contains(row.age.getTooltipText()));
+                if (row.chatID.equals("chat-one")) copies++;
+            }
+            assertEquals(3, copies);
+            NativeChatLink running = new NativeChatLink(ui, new JSONObject(first.toString()).put("status", "running"), false, false, "", id -> new JSONObject(), () -> {});
+            assertEquals("Running status takes priority over age", View.GONE, running.age.getVisibility());
+            hover(original, MotionEvent.ACTION_HOVER_ENTER); assertEquals(View.GONE, original.age.getVisibility());
+            hover(original, MotionEvent.ACTION_HOVER_EXIT); assertEquals(View.VISIBLE, original.age.getVisibility());
+            states.receive(event("chat-one", "completed"), "alice", ""); sidebar.notifications(states);
+            for (NativeChatLink row : sidebar.chatRows) if (row.chatID.equals("chat-one")) {
+                assertEquals(View.GONE, row.age.getVisibility()); assertNotNull(row.notification);
+            }
+            states.dismiss("chat-one"); sidebar.notifications(states);
+            for (NativeChatLink row : sidebar.chatRows) if (row.chatID.equals("chat-one")) assertEquals(View.VISIBLE, row.age.getVisibility());
+            for (NativeChatLink row : sidebar.chatRows) row.refreshTime(now + 60_000);
+            for (NativeChatLink row : sidebar.chatRows) if (row.chatID.equals("chat-one")) assertEquals("1m", row.age.getText().toString());
+            // Robolectric advances Handler time separately from the JVM wall clock.
+            // The scheduled refresh must replace the supplied time with the current wall clock.
+            org.robolectric.Shadows.shadowOf(android.os.Looper.getMainLooper()).idleFor(java.time.Duration.ofMinutes(1));
+            assertSame("Minute updates retain row and long-press anchors", original, sidebar.chatRows.get(0));
+            for (NativeChatLink row : sidebar.chatRows) if (row.chatID.equals("chat-one")) assertEquals("now", row.age.getText().toString());
+            sidebar.setVisibility(View.GONE);
+            original.refreshTime(now + 120_000);
+            org.robolectric.Shadows.shadowOf(android.os.Looper.getMainLooper()).idleFor(java.time.Duration.ofMinutes(1));
+            assertEquals("Hidden sidebars pause their timer", "2m", original.age.getText().toString());
+            sidebar.setVisibility(View.VISIBLE); assertEquals("now", original.age.getText().toString());
+            sidebar.deactivate();
+            original.refreshTime(now + 180_000);
+            org.robolectric.Shadows.shadowOf(android.os.Looper.getMainLooper()).idleFor(java.time.Duration.ofMinutes(1));
+            assertEquals("Disposed sidebars cancel their timer", "3m", original.age.getText().toString());
+        }
     }
 
     @Test public void collapsedProjectsShowUniqueStatusesFromAllTheirChatsAndExpandedProjectsHideThem() throws Exception {
@@ -69,6 +129,7 @@ public class NativeSessionNotificationsTest {
                 layout(sidebar, width);
                 assertEquals(ui.dp(31), row.getHeight()); assertTrue(row.title.getWidth() > 0);
                 assertTrue(row.toggle.getRight() <= row.status.getLeft()); assertTrue(row.status.getRight() <= row.create.getLeft());
+                assertEquals("The new-chat action always keeps the right edge", row.getWidth() - ui.dp(4), row.create.getRight());
                 for (int i = 0; i < row.status.getChildCount(); i++) {
                     View icon = row.status.getChildAt(i);
                     assertTrue(icon.getWidth() > 0); assertTrue(icon.getLeft() >= 0); assertTrue(icon.getRight() <= row.status.getWidth());
@@ -76,7 +137,26 @@ public class NativeSessionNotificationsTest {
                 Bitmap image = Bitmap.createBitmap(width, 800, Bitmap.Config.ARGB_8888); sidebar.draw(new Canvas(image));
                 File artifact = new File(System.getProperty("spool.ui.artifacts"), "project-statuses-" + width + (dark ? "-dark" : "-light") + ".png"); artifact.getParentFile().mkdirs();
                 try (java.io.FileOutputStream output = new java.io.FileOutputStream(artifact)) { assertTrue(image.compress(Bitmap.CompressFormat.PNG, 100, output)); } finally { image.recycle(); }
-                row.create.performClick(); assertEquals(java.util.List.of("new:project-one"), actions);
+                int titleWidth = row.title.getWidth(), actionLeft = row.create.getLeft();
+                android.animation.ValueAnimator spin = org.robolectric.util.ReflectionHelpers.getField(spinner, "spin");
+                assertNotNull(spin); spin.setCurrentPlayTime(375);
+                hover(row, MotionEvent.ACTION_HOVER_ENTER);
+                assertEquals("Pointer hover hides status without stopping animation", 0f, row.status.getAlpha(), 0f);
+                assertEquals(View.VISIBLE, row.status.getVisibility());
+                assertEquals(View.VISIBLE, row.create.getVisibility());
+                layout(sidebar, width);
+                assertEquals(titleWidth, row.title.getWidth()); assertEquals(actionLeft, row.create.getLeft());
+                hover(row, MotionEvent.ACTION_HOVER_EXIT);
+                assertEquals("Touch users and rows without hover show status", 1f, row.status.getAlpha(), 0f);
+                assertSame("Hover retains the running animator", spin, org.robolectric.util.ReflectionHelpers.getField(spinner, "spin"));
+                assertTrue("The animation continues from its previous progress", spin.isRunning() && spin.getCurrentPlayTime() >= 375);
+                float x = (row.create.getLeft() + row.create.getRight()) / 2f, y = row.getHeight() / 2f;
+                for (int action : new int[] {MotionEvent.ACTION_DOWN, MotionEvent.ACTION_UP}) {
+                    MotionEvent tap = MotionEvent.obtain(0, 0, action, x, y, 0);
+                    try { assertTrue("Status must not intercept the new-chat touch target", row.dispatchTouchEvent(tap)); } finally { tap.recycle(); }
+                }
+                org.robolectric.Shadows.shadowOf(android.os.Looper.getMainLooper()).idle();
+                assertEquals(java.util.List.of("new:project-one"), actions);
                 row.toggle.performClick();
                 assertEquals(View.GONE, sidebar.projectRows.get(0).status.getVisibility());
                 assertEquals(0, sidebar.projectRows.get(0).status.getChildCount());
