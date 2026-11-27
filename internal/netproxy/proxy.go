@@ -65,7 +65,7 @@ var activeProxy atomic.Pointer[Policy]
 
 func init() {
 	activeProxy.Store(newPolicy(environmentConfig(), systemProxy{}))
-	// Install before HTTP users (including the signed update wrapper) start.
+	// Install before HTTP users (including the signed update source) start.
 	// The transport stays immutable; requests read an atomic policy snapshot.
 	http.DefaultTransport.(*http.Transport).Proxy = Proxy
 }

@@ -13,8 +13,17 @@ import (
 	"spool/internal/appupdate"
 )
 
-// Initialize before services start using HTTP; MyGo has a process-wide client.
-var signedUpdatesReady, signedUpdatesError = appupdate.RequireSignedManifests()
+var signedUpdatesReady, signedUpdatesError = configureSignedUpdates()
+
+func configureSignedUpdates() (bool, error) {
+	// Keep Spool's live proxy policy for metadata and archive requests.
+	source, err := appupdate.NewSignedSource(http.DefaultClient)
+	if err != nil || source == nil {
+		return false, err
+	}
+	mygo.Updater.SetSource(source)
+	return true, nil
+}
 
 func (p *panel) initUpdates() {
 	p.updates = appupdate.New(appupdate.Options{

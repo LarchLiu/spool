@@ -15,8 +15,8 @@ export function serverArchiveName(version, target) {
 
 export function installerName(version, target) {
   const [platform, arch] = target.split("-");
-  if (platform === "darwin") return `Spool ${version} ${arch}.dmg`;
-  if (platform === "windows") return `Spool Setup ${version} ${arch}.exe`;
+  if (platform === "darwin") return `spool-${version}-${arch}.dmg`;
+  if (platform === "windows") return `spool-setup-${version}-${arch}.exe`;
   const debVersion = version.replace(/-(.*)/s, (_, prerelease) => `~${prerelease.replaceAll("-", ".")}`);
   return `spool_${debVersion}_${arch}.deb`;
 }

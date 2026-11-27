@@ -2,6 +2,7 @@ package appupdate
 
 import (
 	"bytes"
+	"context"
 	"crypto/ed25519"
 	"crypto/rand"
 	"encoding/base64"
@@ -10,6 +11,7 @@ import (
 	"io"
 	"net/http"
 	"strings"
+	"sync"
 	"testing"
 )
 
@@ -81,7 +83,7 @@ type roundTripFunc func(*http.Request) (*http.Response, error)
 
 func (f roundTripFunc) RoundTrip(req *http.Request) (*http.Response, error) { return f(req) }
 
-func TestManifestClientAuthenticatesRedirectedBytesWithoutRefetching(t *testing.T) {
+func TestSignedSourceAuthenticatesRedirectedBytesWithoutRefetching(t *testing.T) {
 	pub, key, manifest := manifestFixture(t)
 	data, _ := json.Marshal(manifest)
 	signature := ed25519.Sign(key, data)
@@ -105,19 +107,19 @@ func TestManifestClientAuthenticatesRedirectedBytesWithoutRefetching(t *testing.
 		}
 		return response, nil
 	})}
-	client, err := manifestClient(base, manifest.Repository, base64.StdEncoding.EncodeToString(pub), manifest.Target)
+	source, err := newSignedSource(base, manifest.Repository, base64.StdEncoding.EncodeToString(pub), manifest.Target)
 	if err != nil {
 		t.Fatal(err)
 	}
-	response, err := client.Get(feed)
+	body, err := source.Manifest(t.Context(), false)
 	if err != nil {
 		t.Fatal(err)
 	}
-	actual, _ := readLimited(response.Body, maxManifestSize)
+	actual, _ := readLimited(body, maxManifestSize)
 	if !bytes.Equal(actual, data) || len(requests) != 3 {
 		t.Fatalf("verified bytes changed or were fetched twice: %s, %v", actual, requests)
 	}
-	response, err = client.Get("https://example.test/other")
+	response, err := base.Get("https://example.test/other")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -128,17 +130,17 @@ func TestManifestClientAuthenticatesRedirectedBytesWithoutRefetching(t *testing.
 	// Replaying an old archive as a high version requires changing signed
 	// metadata. It must fail before MyGo ever sees the forged version.
 	data = bytes.ReplaceAll(data, []byte("0.1.2"), []byte("99.0.0"))
-	if _, err := client.Get(feed); err == nil {
+	if _, err := source.Manifest(t.Context(), false); err == nil {
 		t.Fatal("relabelled old update metadata was accepted")
 	}
 	signature = nil
-	if _, err := client.Get(feed); err == nil {
+	if _, err := source.Manifest(t.Context(), false); err == nil {
 		t.Fatal("unsigned fallback was allowed")
 	}
 }
 
 func TestManifestConfigurationAndSizeLimits(t *testing.T) {
-	if _, err := manifestClient(http.DefaultClient, "owner/spool", "bad-key", "linux-amd64"); err == nil {
+	if _, err := newSignedSource(http.DefaultClient, "owner/spool", "bad-key", "linux-amd64"); err == nil {
 		t.Fatal("invalid key accepted")
 	}
 	if _, err := readLimited(io.NopCloser(strings.NewReader("too long")), 3); err == nil {
@@ -159,30 +161,155 @@ func TestOnlyAuthenticatedArchiveTrafficGetsNetworkClassification(t *testing.T) 
 		}
 		return &http.Response{StatusCode: 200, Header: make(http.Header), Body: io.NopCloser(bytes.NewReader(body)), Request: req}, nil
 	})}
-	client, err := manifestClient(base, manifest.Repository, base64.StdEncoding.EncodeToString(pub), manifest.Target)
+	source, err := newSignedSource(base, manifest.Repository, base64.StdEncoding.EncodeToString(pub), manifest.Target)
 	if err != nil {
 		t.Fatal(err)
 	}
-	feed := "https://github.com/owner/spool/releases/latest/download/update-darwin-arm64.json"
-	res, err := client.Get(feed)
+	if _, err := source.Open(t.Context(), manifest.URL); err == nil {
+		t.Fatal("archive accepted before its manifest was verified")
+	}
+	body, err := source.Manifest(t.Context(), false)
 	if err != nil {
 		t.Fatal(err)
 	}
-	res.Body.Close()
-	res, err = client.Get(manifest.URL)
+	body.Close()
+	body, err = source.Open(t.Context(), manifest.URL)
 	if err != nil {
 		t.Fatal(err)
 	}
-	_, err = readLimited(res.Body, 100)
+	_, err = readLimited(body, 100)
 	var network *NetworkError
 	if !errors.As(err, &network) {
 		t.Fatalf("truncated authenticated download not classified: %v", err)
 	}
-	res, err = client.Get("https://other.test/ordinary")
+	if _, err = source.Open(t.Context(), "https://other.test/ordinary"); err == nil {
+		t.Fatal("archive without an authenticated manifest was accepted")
+	}
+}
+
+func TestSignedSourceConfigurationDoesNotChangeDefaultHTTPClient(t *testing.T) {
+	previousRepo, previousKey := releaseRepository, releasePublicKey
+	t.Cleanup(func() { releaseRepository, releasePublicKey = previousRepo, previousKey })
+	originalClient := http.DefaultClient
+	pub, _, _ := manifestFixture(t)
+	publicKey := base64.StdEncoding.EncodeToString(pub)
+	for _, configuration := range []struct {
+		repo, key string
+		wantError bool
+	}{
+		{"", "", false},
+		{"owner/spool", "", true},
+		{"", publicKey, true},
+		{"owner/spool", "invalid", true},
+		{"owner/spool", publicKey, false},
+	} {
+		releaseRepository, releasePublicKey = configuration.repo, configuration.key
+		source, err := NewSignedSource(originalClient)
+		if (err != nil) != configuration.wantError {
+			t.Fatalf("configuration %q: %v", configuration.repo, err)
+		}
+		if (source != nil) != (configuration.repo != "" && !configuration.wantError) {
+			t.Fatal("signed update source has incorrect enabled state")
+		}
+		if http.DefaultClient != originalClient {
+			t.Fatal("signed updates replaced the application's HTTP client")
+		}
+	}
+	if _, err := newSignedSource(originalClient, "owner/spool", publicKey, "android-arm64"); err == nil {
+		t.Fatal("unsupported update target accepted")
+	}
+}
+
+func TestSignedSourceHonorsCancellationAndNeverFallsBackToUnsignedMetadata(t *testing.T) {
+	pub, _, manifest := manifestFixture(t)
+	data, _ := json.Marshal(manifest)
+	for _, status := range []int{http.StatusNotFound, http.StatusForbidden, http.StatusServiceUnavailable} {
+		t.Run(http.StatusText(status), func(t *testing.T) {
+			base := &http.Client{Transport: roundTripFunc(func(req *http.Request) (*http.Response, error) {
+				response := &http.Response{StatusCode: 200, Header: make(http.Header), Body: io.NopCloser(bytes.NewReader(data)), Request: req}
+				if strings.HasSuffix(req.URL.Path, ".sig") {
+					response.StatusCode = status
+				}
+				return response, nil
+			})}
+			source, err := newSignedSource(base, manifest.Repository, base64.StdEncoding.EncodeToString(pub), manifest.Target)
+			if err != nil {
+				t.Fatal(err)
+			}
+			_, err = source.Manifest(t.Context(), false)
+			if err == nil {
+				t.Fatal("missing signature allowed an update")
+			}
+			var network *NetworkError
+			if errors.As(err, &network) != (status == http.StatusServiceUnavailable) {
+				t.Fatalf("incorrect retry classification: %v", err)
+			}
+			if _, err := source.Open(t.Context(), manifest.URL); err == nil {
+				t.Fatal("failed metadata check authorized its archive")
+			}
+		})
+	}
+	base := &http.Client{Transport: roundTripFunc(func(req *http.Request) (*http.Response, error) {
+		if req.Header.Get("User-Agent") != "spool-updater" {
+			t.Error("missing updater user agent")
+		}
+		<-req.Context().Done()
+		return nil, req.Context().Err()
+	})}
+	source, err := newSignedSource(base, manifest.Repository, base64.StdEncoding.EncodeToString(pub), manifest.Target)
 	if err != nil {
 		t.Fatal(err)
 	}
-	if _, err = readLimited(res.Body, 100); err != nil {
-		t.Fatal("unrelated request changed", err)
+	if _, err := source.Manifest(t.Context(), true); err == nil {
+		t.Fatal("unconfigured prerelease channel accepted")
 	}
+	ctx, cancel := context.WithCancel(t.Context())
+	cancel()
+	if _, err := source.Manifest(ctx, false); !errors.Is(err, context.Canceled) {
+		t.Fatalf("cancellation lost: %v", err)
+	}
+}
+
+func TestSignedSourceKeepsEarlierArchivesAcrossConcurrentChecks(t *testing.T) {
+	pub, key, manifest := manifestFixture(t)
+	data, _ := json.Marshal(manifest)
+	base := &http.Client{Transport: roundTripFunc(func(req *http.Request) (*http.Response, error) {
+		body := data
+		if strings.HasSuffix(req.URL.Path, ".sig") {
+			body = ed25519.Sign(key, data)
+		}
+		return &http.Response{StatusCode: 200, Header: make(http.Header), Body: io.NopCloser(bytes.NewReader(body)), Request: req}, nil
+	})}
+	source, err := newSignedSource(base, manifest.Repository, base64.StdEncoding.EncodeToString(pub), manifest.Target)
+	if err != nil {
+		t.Fatal(err)
+	}
+	body, err := source.Manifest(t.Context(), false)
+	if err != nil {
+		t.Fatal(err)
+	}
+	body.Close()
+	manifest.Version = "0.1.3"
+	manifest.URL = strings.ReplaceAll(manifest.URL, "0.1.2", "0.1.3")
+	data, _ = json.Marshal(manifest)
+	var workers sync.WaitGroup
+	for range 8 {
+		workers.Go(func() {
+			body, err := source.Manifest(t.Context(), false)
+			if err != nil {
+				t.Error(err)
+				return
+			}
+			body.Close()
+			for _, address := range []string{manifest.URL, strings.ReplaceAll(manifest.URL, "0.1.3", "0.1.2")} {
+				body, err := source.Open(t.Context(), address)
+				if err != nil {
+					t.Error(err)
+					continue
+				}
+				body.Close()
+			}
+		})
+	}
+	workers.Wait()
 }

@@ -11,6 +11,16 @@ var titlebarChanged = mygo.NewEvent[windowChrome]("spool:titlebar")
 var desktopAppearance = mygo.NewEvent[string]("spool:appearance")
 var desktopUpdateAvailable = mygo.NewEvent[bool]("spool:update-available")
 
+func desktopPageOptions(preload string) mygo.PageOptions {
+	return mygo.PageOptions{
+		PreloadScript: preload,
+		// MyGo 0.7.2 made these gestures opt-in. Preserve the system WebView
+		// behavior used by Spool before that change, including macOS's defaults.
+		PinchZoom:       runtime.GOOS == "windows" || runtime.GOOS == "linux",
+		SwipeNavigation: runtime.GOOS == "windows",
+	}
+}
+
 const desktopWindowPreload = `Object.defineProperty(window, "spoolDesktop", {value: true});
 window.mygo?.on("spool:servers", servers => {
   window.spoolServers = servers;

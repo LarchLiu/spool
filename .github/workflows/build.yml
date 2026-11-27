@@ -111,7 +111,7 @@ jobs:
       - name: Disable update feeds, build hooks and certificate signing
         run: bun tools/prepare-build.mjs
       - name: Build test installers without signing secrets
-        run: go run github.com/egoist/mygo/cmd/mygo@v0.6.4 build -platform "${{ matrix.platform }}" -skip-build-command -sign - -skip-notarize
+        run: go run github.com/egoist/mygo/cmd/mygo@v0.10.0 build -platform "${{ matrix.platform }}" -skip-build-command -sign - -skip-notarize
       - name: Package unsigned archive for native startup tests
         run: bun tools/package-release.mjs "${{ matrix.target }}"
       - name: Build and package headless server (no GUI or CGO)
@@ -123,7 +123,7 @@ jobs:
         run: |
           set -euo pipefail
           mkdir -p build-assets
-          find "build/$TARGET" -maxdepth 1 -type f \( -name '*.tar.gz' -o -name '*.dmg' -o -name '*.deb' -o -name '*Setup*.exe' \) -exec cp {} build-assets/ \;
+          find "build/$TARGET" -maxdepth 1 -type f \( -name '*.tar.gz' -o -name '*.dmg' -o -name '*.deb' -o -name 'spool-setup-*.exe' \) -exec cp {} build-assets/ \;
       - name: Verify unsigned target assets
         run: bun tools/release-assets.mjs build-assets "${{ matrix.target }}" --unsigned
       - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7

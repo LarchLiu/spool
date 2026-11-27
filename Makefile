@@ -12,7 +12,7 @@ web: branding
 	bun run --bun --cwd web build
 
 dev: web
-	go run github.com/egoist/mygo/cmd/mygo@v0.6.4 dev
+	go run github.com/egoist/mygo/cmd/mygo@v0.10.0 dev
 
 branding:
 	go run ./tools/branding.go
@@ -47,7 +47,7 @@ auto-format:
 	bun run --bun --cwd web format
 
 package: web
-	go run github.com/egoist/mygo/cmd/mygo@v0.6.4 build -skip-dmg
+	go run github.com/egoist/mygo/cmd/mygo@v0.10.0 build -skip-dmg
 
 build: apk
 

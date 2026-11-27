@@ -11,7 +11,9 @@ require (
 	github.com/coder/websocket v1.8.15
 	github.com/dicebear/dicebear-go/v11 v11.0.0-rc.2
 	github.com/dicebear/styles/v10 v10.6.0
-	github.com/egoist/mygo v0.6.4
+	github.com/ebitengine/purego v0.11.1
+	github.com/egoist/mygo v0.10.0
+	github.com/godbus/dbus/v5 v5.2.2
 	github.com/golang-jwt/jwt/v5 v5.2.1
 	github.com/google/uuid v1.6.0
 	github.com/grandcat/zeroconf v1.0.0
@@ -38,12 +40,10 @@ require (
 	github.com/dblohm7/wingoes v0.0.0-20260526185140-fb298caac7ca // indirect
 	github.com/dicebear/schema/v2 v2.0.2 // indirect
 	github.com/dustin/go-humanize v1.1.0 // indirect
-	github.com/ebitengine/purego v0.11.1 // indirect
 	github.com/fxamacker/cbor/v2 v2.9.3 // indirect
 	github.com/gaissmai/bart v0.29.0 // indirect
 	github.com/go-json-experiment/json v0.0.0-20260820222146-c27c302e5fc3 // indirect
 	github.com/go-text/typesetting v0.3.5 // indirect
-	github.com/godbus/dbus/v5 v5.2.2 // indirect
 	github.com/golang/groupcache v0.0.0-20241129210726-2c02b8208cf8 // indirect
 	github.com/google/btree v1.1.3 // indirect
 	github.com/google/go-cmp v0.7.0 // indirect

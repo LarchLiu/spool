@@ -146,7 +146,7 @@ jobs:
           MYGO_LDFLAGS: >-
             -X spool/internal/appupdate.releaseRepository=${{ github.repository }}
             -X spool/internal/appupdate.releasePublicKey=${{ vars.MYGO_UPDATER_PUBLIC_KEY }}
-        run: go run github.com/egoist/mygo/cmd/mygo@v0.6.4 build -platform "${{ matrix.platform }}" -skip-build-command -sign - -skip-notarize
+        run: go run github.com/egoist/mygo/cmd/mygo@v0.10.0 build -platform "${{ matrix.platform }}" -skip-build-command -sign - -skip-notarize
       - name: Package unsigned update archive
         run: bun tools/package-release.mjs "${{ matrix.target }}"
       - name: Build and package headless server (no GUI or CGO)
@@ -158,7 +158,7 @@ jobs:
         run: |
           set -euo pipefail
           mkdir -p release-assets
-          find "build/$TARGET" -maxdepth 1 -type f \( -name '*.tar.gz' -o -name '*.dmg' -o -name '*.deb' -o -name '*Setup*.exe' \) -exec cp {} release-assets/ \;
+          find "build/$TARGET" -maxdepth 1 -type f \( -name '*.tar.gz' -o -name '*.dmg' -o -name '*.deb' -o -name 'spool-setup-*.exe' \) -exec cp {} release-assets/ \;
       - name: Verify unsigned target assets
         env:
           MYGO_UPDATER_PUBLIC_KEY: ${{ vars.MYGO_UPDATER_PUBLIC_KEY }}

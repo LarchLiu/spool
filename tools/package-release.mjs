@@ -11,9 +11,9 @@ export async function packageRelease(target, env = process.env) {
   const directory = join("build", target);
   const archive = `spool-${version}-${target}.tar.gz`;
   const server = serverArchiveName(version, target);
-  const excluded = new Set([archive, installerName(version, target), server, `${server}.sig`, "install.sh"]);
+  const excluded = new Set([archive, installerName(version, target), server, `${server}.sig`, "install.sh", "install.ps1"]);
   const entries = target.startsWith("darwin-") ? ["Spool.app"] :
-    (await readdir(directory)).filter((name) => !excluded.has(name) && !name.startsWith("update-") && !name.endsWith(".delta"));
+    (await readdir(directory)).filter((name) => !excluded.has(name) && !name.startsWith("update-") && !name.endsWith(".delta") && !name.endsWith(".rpm") && !name.startsWith("PKGBUILD"));
   if (!entries.includes(target.startsWith("darwin-") ? "Spool.app" : target.startsWith("windows-") ? "Spool.exe" : "spool")) {
     throw new Error(`Missing application payload for ${target}`);
   }

@@ -74,6 +74,15 @@ test("per-target checks work and prerelease Debian names follow MyGo's version c
   assert.equal((await verifyReleaseAssets(directory, { ...options, tag, targets })).length, 6);
 });
 
+test("desktop installers use MyGo's slug names for both architectures and prereleases", () => {
+  for (const arch of ["amd64", "arm64"]) {
+    for (const version of ["1.2.3", "1.2.3-beta.1"]) {
+      assert.equal(installerName(version, `darwin-${arch}`), `spool-${version}-${arch}.dmg`);
+      assert.equal(installerName(version, `windows-${arch}`), `spool-setup-${version}-${arch}.exe`);
+    }
+  }
+});
+
 test("rejects missing installers, empty assets and unexpected files", async (t) => {
   for (const mutation of ["missing", "empty", "extra"]) {
     await t.test(mutation, async (t) => {

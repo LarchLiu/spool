@@ -27,7 +27,7 @@ test("desktop dev starts a pinned Vite origin without silently changing ports", 
   );
   assert.match(
     makefile,
-    /dev: web\n\tgo run github\.com\/egoist\/mygo\/cmd\/mygo@v0\.6\.4 dev/,
+    /dev: web\n\tgo run github\.com\/egoist\/mygo\/cmd\/mygo@v0\.10\.0 dev/,
   );
 });
 

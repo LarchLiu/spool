@@ -2,6 +2,7 @@ package appupdate
 
 import (
 	"bytes"
+	"context"
 	"crypto/ed25519"
 	"encoding/base64"
 	"encoding/json"
@@ -35,32 +36,28 @@ type signedManifest struct {
 	Signature  string `json:"signature"`
 }
 
-// RequireSignedManifests runs once during process initialization, before any
-// HTTP users start. MyGo has no per-updater HTTP client hook: intercept only its
-// exact release feed, authenticate the bytes, and leave archive installation to
-// MyGo. In particular, there is no separate check followed by a mutable re-fetch.
-func RequireSignedManifests() (bool, error) {
+// NewSignedSource returns the release build's authenticated update source, or
+// nil when signed updates are not configured. It implements MyGo's UpdateSource
+// without changing the HTTP client used by other parts of the app. MyGo reads
+// the exact verified bytes and still verifies the archive before installing it.
+func NewSignedSource(base *http.Client) (*SignedSource, error) {
 	if releaseRepository == "" && releasePublicKey == "" {
-		return false, nil
+		return nil, nil
 	}
-	client, err := manifestClient(http.DefaultClient, releaseRepository, releasePublicKey, runtime.GOOS+"-"+runtime.GOARCH)
-	if err != nil {
-		return false, err
-	}
-	http.DefaultClient = client
-	return true, nil
+	return newSignedSource(base, releaseRepository, releasePublicKey, runtime.GOOS+"-"+runtime.GOARCH)
 }
 
-type manifestTransport struct {
+// SignedSource serves only authenticated release metadata and the archives it
+// names. A source may be used by overlapping checks and installations.
+type SignedSource struct {
 	base               *http.Client
 	feed, repo, target string
 	key                ed25519.PublicKey
 	mu                 sync.Mutex
-	archiveURL         string
-	archiveSize        int64
+	archives           map[string]int64
 }
 
-func manifestClient(base *http.Client, repo, publicKey, target string) (*http.Client, error) {
+func newSignedSource(base *http.Client, repo, publicKey, target string) (*SignedSource, error) {
 	key, err := base64.StdEncoding.DecodeString(publicKey)
 	if err != nil || len(key) != ed25519.PublicKeySize || !repositoryPattern.MatchString(repo) {
 		return nil, errors.New("invalid signed update configuration")
@@ -72,68 +69,79 @@ func manifestClient(base *http.Client, repo, publicKey, target string) (*http.Cl
 	if plain.Transport == nil {
 		plain.Transport = http.DefaultTransport
 	}
-	client := *base
-	client.Transport = &manifestTransport{
+	return &SignedSource{
 		base: &plain, repo: repo, target: target, key: key,
-		feed: "https://github.com/" + repo + "/releases/latest/download/update-" + target + ".json",
-	}
-	return &client, nil
+		feed:     "https://github.com/" + repo + "/releases/latest/download/update-" + target + ".json",
+		archives: make(map[string]int64),
+	}, nil
 }
 
-func (t *manifestTransport) RoundTrip(req *http.Request) (*http.Response, error) {
-	if req.Method != http.MethodGet || req.URL.String() != t.feed {
-		t.mu.Lock()
-		archive, size := req.Method == http.MethodGet && req.URL.String() == t.archiveURL, t.archiveSize
-		t.mu.Unlock()
-		if archive {
-			response, err := updateResponse(t.base.Do(req.Clone(req.Context())))
-			if err == nil && response.StatusCode == http.StatusOK {
-				response.Body = &networkBody{ReadCloser: response.Body, remaining: size}
-			}
-			return response, err
-		}
-		return t.base.Transport.RoundTrip(req)
+func (s *SignedSource) get(ctx context.Context, address string) (io.ReadCloser, error) {
+	req, err := http.NewRequestWithContext(ctx, http.MethodGet, address, nil)
+	if err != nil {
+		return nil, err
 	}
-	// Follow GitHub's asset redirects inside the unwrapped client, so the final
-	// CDN body is verified even though its URL no longer resembles the feed.
-	response, err := updateResponse(t.base.Do(req.Clone(req.Context())))
+	req.Header.Set("User-Agent", "spool-updater")
+	response, err := updateResponse(s.base.Do(req))
 	if err != nil {
 		return nil, err
 	}
 	if response.StatusCode != http.StatusOK {
-		return response, nil
+		response.Body.Close()
+		return nil, fmt.Errorf("update download returned HTTP %d", response.StatusCode)
 	}
-	data, err := readLimited(response.Body, maxManifestSize)
+	return response.Body, nil
+}
+
+// Manifest stays on Spool's stable release channel. A prerelease channel needs
+// its own authenticated feed rather than falling back to unsigned metadata.
+func (s *SignedSource) Manifest(ctx context.Context, prereleases bool) (io.ReadCloser, error) {
+	if prereleases {
+		return nil, errors.New("prerelease updates are not configured")
+	}
+	// Follow asset redirects before authenticating, then pass these same bytes
+	// to MyGo. Never verify one response and ask MyGo to fetch it again.
+	body, err := s.get(ctx, s.feed)
+	if err != nil {
+		return nil, err
+	}
+	data, err := readLimited(body, maxManifestSize)
 	if err != nil {
 		return nil, networkFailure(err)
 	}
-	signatureRequest := req.Clone(req.Context())
-	url := *req.URL
-	url.Path += ".sig"
-	signatureRequest.URL = &url
-	signatureResponse, err := updateResponse(t.base.Do(signatureRequest))
+	body, err = s.get(ctx, s.feed+".sig")
 	if err != nil {
 		return nil, fmt.Errorf("fetch signed update metadata: %w", err)
 	}
-	if signatureResponse.StatusCode != http.StatusOK {
-		signatureResponse.Body.Close()
-		return nil, errors.New("update manifest signature is unavailable; refusing unsigned metadata")
-	}
-	signature, err := readLimited(signatureResponse.Body, ed25519.SignatureSize)
+	signature, err := readLimited(body, ed25519.SignatureSize)
 	if err != nil {
 		return nil, networkFailure(err)
 	}
-	if err := verifyManifest(data, signature, t.key, t.repo, t.target); err != nil {
+	if err := verifyManifest(data, signature, s.key, s.repo, s.target); err != nil {
 		return nil, err
 	}
 	var manifest signedManifest
 	_ = json.Unmarshal(data, &manifest) // Already strictly decoded and verified.
-	t.mu.Lock()
-	t.archiveURL, t.archiveSize = manifest.URL, manifest.Size
-	t.mu.Unlock()
-	response.Body = io.NopCloser(bytes.NewReader(data))
-	response.ContentLength = int64(len(data))
-	return response, nil
+	s.mu.Lock()
+	s.archives[manifest.URL] = manifest.Size
+	s.mu.Unlock()
+	return io.NopCloser(bytes.NewReader(data)), nil
+}
+
+// Open accepts only archives named by a manifest verified by this source.
+// Keep earlier checked releases available while a later check runs.
+func (s *SignedSource) Open(ctx context.Context, address string) (io.ReadCloser, error) {
+	s.mu.Lock()
+	size, authenticated := s.archives[address]
+	s.mu.Unlock()
+	if !authenticated {
+		return nil, errors.New("update archive has no authenticated manifest")
+	}
+	body, err := s.get(ctx, address)
+	if err != nil {
+		return nil, err
+	}
+	return &networkBody{ReadCloser: body, remaining: size}, nil
 }
 
 func readLimited(body io.ReadCloser, limit int64) ([]byte, error) {

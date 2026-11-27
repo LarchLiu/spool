@@ -93,10 +93,10 @@ func (p *panel) openRemoteDesktop(id string, chat *desktopServerChat) {
 		Title: p.remoteDesktopTitle(id),
 		Width: 1280, Height: 850, MinWidth: 480, MinHeight: 320,
 		BackgroundColor: "light-dark(#ffffff, #242423)",
-		Page: mygo.PageOptions{PreloadScript: desktopWindowPreload + `
+		Page: desktopPageOptions(desktopWindowPreload + `
 window.mygo?.on("spool:remote-desktop-server", name => {
   window.dispatchEvent(new CustomEvent("spool:remote-desktop-server", {detail: name}));
-});`},
+});`),
 	})
 	chat.remoteDesktop = window
 	window.OnClosed(func() {
