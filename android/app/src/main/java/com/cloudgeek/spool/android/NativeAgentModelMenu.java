@@ -21,6 +21,7 @@ final class NativeAgentModelMenu extends LinearLayout {
     private final boolean remote;
     private final Consumer<NativeModelSelection> change;
     private NativeModelSelection selection;
+    private final NativeModelSelection.Memory memory;
     final ScrollView catalog;
 
     NativeAgentModelMenu(NativeUi ui, JSONArray agents, NativeModelSelection selection,
@@ -30,10 +31,17 @@ final class NativeAgentModelMenu extends LinearLayout {
 
     NativeAgentModelMenu(NativeUi ui, JSONArray agents, NativeModelSelection selection,
             String currentBackend, boolean remote, Consumer<NativeModelSelection> change) {
+        this(ui, agents, selection, currentBackend, remote, new NativeModelSelection.Memory(), change);
+    }
+
+    NativeAgentModelMenu(NativeUi ui, JSONArray agents, NativeModelSelection selection,
+            String currentBackend, boolean remote, NativeModelSelection.Memory memory, Consumer<NativeModelSelection> change) {
         super(ui.context);
         this.ui = ui;
         this.agents = agents;
         this.selection = selection;
+        this.memory = memory;
+        memory.remember(selection);
         this.currentBackend = currentBackend;
         this.remote = remote;
         this.change = change;
@@ -69,7 +77,7 @@ final class NativeAgentModelMenu extends LinearLayout {
         }
     }
 
-    void bind(NativeModelSelection value) { selection = value; render(); }
+    void bind(NativeModelSelection value) { selection = value; memory.remember(value); render(); }
 
     void bindAgents(JSONArray value) { agents = value; render(); }
 
@@ -147,7 +155,8 @@ final class NativeAgentModelMenu extends LinearLayout {
                 row.setEnabled(available);
                 row.setAlpha(available ? 1 : .45f);
                 row.setOnClickListener(view -> {
-                    selection = NativeModelSelection.choose(agent, id);
+                    selection = memory.choose(agent, id);
+                    memory.remember(selection);
                     change.accept(selection);
                     render();
                 });
@@ -173,6 +182,7 @@ final class NativeAgentModelMenu extends LinearLayout {
                 @Override public void onProgressChanged(SeekBar view, int progress, boolean fromUser) {
                     if (!fromUser) return;
                     selection = selection.withEffort(levels.get(progress));
+                    memory.remember(selection);
                     label.setText(effortLabel(ui, selection.effort));
                     if (android.os.Build.VERSION.SDK_INT >= 30) view.setStateDescription(label.getText());
                     change.accept(selection);

@@ -4,6 +4,7 @@ import {
   chooseModel,
   effortChoices,
   chatSelection,
+  ModelSelectionMemory,
 } from "../.test-build/model-selection.js";
 
 const codex = {
@@ -107,5 +108,55 @@ test("an undiscovered catalog still allows a safe CLI-default selection", () => 
     backend: "claude",
     model: "",
     effort: "",
+  });
+});
+
+test("switching agents restores each model's effort, including matching model IDs", () => {
+  const memory = new ModelSelectionMemory();
+  const codexAgent = {
+    ...codex,
+    catalog: { ...codex.catalog, models: [claude.catalog.models[0]] },
+  };
+  memory.remember({ backend: "claude", model: "shared-id", effort: "high" });
+  let selected = memory.choose(codexAgent, "shared-id");
+  assert.equal(selected.effort, "high");
+  memory.remember({ ...selected, effort: "low" });
+  selected = memory.choose(claude, "shared-id");
+  assert.equal(selected.effort, "high");
+  memory.remember(selected);
+  assert.equal(memory.choose(codexAgent, "shared-id").effort, "low");
+  assert.equal(memory.choose(claude, "shared-id").effort, "high");
+});
+
+test("remembered efforts are per model and preserve an explicit Claude default", () => {
+  const memory = new ModelSelectionMemory();
+  const agent = {
+    ...claude,
+    catalog: {
+      ...claude.catalog,
+      models: [
+        claude.catalog.models[0],
+        { ...claude.catalog.models[0], model: "other-model" },
+      ],
+    },
+  };
+  memory.remember({ backend: "claude", model: "shared-id", effort: "" });
+  memory.remember({ backend: "claude", model: "other-model", effort: "low" });
+  assert.equal(memory.choose(agent, "shared-id").effort, "");
+  assert.equal(memory.choose(agent, "other-model").effort, "low");
+  memory.remember({ backend: "claude", model: "shared-id", effort: "high" });
+  assert.equal(memory.choose(agent, "shared-id").effort, "high");
+  assert.equal(memory.choose(agent, "other-model").effort, "low");
+});
+
+test("catalog changes fall back when a remembered effort is no longer supported", () => {
+  const memory = new ModelSelectionMemory();
+  memory.remember({ backend: "claude", model: "shared-id", effort: "max" });
+  assert.deepEqual(memory.choose(claude, "shared-id"), chooseModel(claude, "shared-id"));
+  memory.remember({ backend: "claude", model: "fixed", effort: "high" });
+  const fixed = { ...claude, catalog: { models: [{ model: "fixed", supportedReasoningEfforts: [] }] } };
+  assert.equal(memory.choose(fixed, "fixed").effort, "");
+  assert.deepEqual(memory.choose({ ...claude, catalog: { models: null } }, "fixed"), {
+    backend: "claude", model: "fixed", effort: "",
   });
 });

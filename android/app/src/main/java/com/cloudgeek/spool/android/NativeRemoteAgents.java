@@ -53,6 +53,7 @@ final class NativeRemoteAgents implements NativeComposerCommands.ClientMenu {
     private JSONObject menuServer, targetServer, targetProject;
     private String conversation = "";
     NativeModelSelection selection = new NativeModelSelection("codex", "", "");
+    private final NativeModelSelection.Memory modelSelectionMemory = new NativeModelSelection.Memory();
     private NativeDialog dialog;
     private String displayedTask = "", displayedState = "";
 
@@ -96,6 +97,7 @@ final class NativeRemoteAgents implements NativeComposerCommands.ClientMenu {
     }
 
     void reset() {
+        modelSelectionMemory.clear();
         ++epoch; ++projectRequest; ++agentRequest; ++serverRequest; main.removeCallbacks(poll); closeDialog();
         selectedMCPs.clear();
         busy = serversLoading = serversLoaded = polling = projectsLoading = scheduled = false;
@@ -253,6 +255,9 @@ final class NativeRemoteAgents implements NativeComposerCommands.ClientMenu {
     }
 
     private void chooseTarget(JSONObject server, JSONObject project, String conversation, NativeModelSelection keep) {
+        if (targetServer == null || targetProject == null
+                || !targetServer.optString("id").equals(server.optString("id"))
+                || !targetProject.optString("id").equals(project.optString("id"))) modelSelectionMemory.clear();
         targetServer = server; targetProject = project; this.conversation = conversation; menuServer = null;
         agents = new JSONArray(); if (keep != null) selection = keep;
         int version = ++agentRequest;
@@ -281,7 +286,7 @@ final class NativeRemoteAgents implements NativeComposerCommands.ClientMenu {
             }
         }
         NativePopover menu = NativePopover.model(ui);
-        menu.content.addView(new NativeAgentModelMenu(ui, available, selection, "", true, value -> { selection = value; changed(); }),
+        menu.content.addView(new NativeAgentModelMenu(ui, available, selection, "", true, modelSelectionMemory, value -> { selection = value; changed(); }),
                 new LinearLayout.LayoutParams(-1, -2));
         menu.show(composer.model, true);
     }

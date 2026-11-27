@@ -157,7 +157,7 @@ import { TurnError } from "./turn-error";
 import { TurnResponse } from "./tool-activity";
 import { exchangeFiles, turnExchanges } from "./turn-exchanges";
 import { turnWorkLabel } from "./turn-presentation";
-import { chatSelection, chooseModel } from "./model-selection";
+import { chatSelection, chooseModel, ModelSelectionMemory } from "./model-selection";
 import { effortLabel as formatEffort } from "./i18n";
 import type { Translator } from "./i18n";
 import { parsePreferences, preferencesStorageKey, type UIPreferences } from "./preferences";
@@ -510,6 +510,10 @@ function App() {
     [effort, setEffort] = useState(""),
     [picker, setPicker] = useState(false),
     [backend, setBackend] = useState<"codex" | "claude">("codex");
+  const modelSelectionMemory = useMemo(
+    () => new ModelSelectionMemory(),
+    [serverSelection, user?.id],
+  );
   const [install, setInstall] = useState<BeforeInstallPromptEvent | null>(null),
     [update, setUpdate] = useState(false);
   const [files, setFiles] = useState<DraftAttachment[]>([]);
@@ -2283,6 +2287,10 @@ function App() {
     waiting.postMessage({ type: "SKIP_WAITING" });
   }
   const composerSelection = remote.target ? remote.selection : { backend, model, effort };
+  const remoteModelSelectionMemory = useMemo(
+    () => new ModelSelectionMemory(),
+    [serverSelection, user?.id, remote.target?.server.id, remote.target?.project.id],
+  );
   const currentModel = (remote.target ? remote.agents.find(item => item.backend === remote.selection.backend)?.catalog.models || [] : models).find((m) => m.model === composerSelection.model);
   useEffect(() => {
     if (!currentModel || remote.target) return;
@@ -3122,6 +3130,7 @@ function App() {
                               )
                         }
                         selection={composerSelection}
+                        memory={remote.target ? remoteModelSelectionMemory : modelSelectionMemory}
                         currentBackend={
                           remote.target ? remote.target.conversation ? remote.selection.backend : undefined : chat?.turns.length ? chat.backend : undefined
                         }

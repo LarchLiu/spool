@@ -102,6 +102,24 @@ public class NativeBehaviorTest {
         }
     }
 
+    @Test public void rememberedModelEffortsMatchActualWebVectors() throws Exception {
+        JSONObject fixtures = fixtures();
+        JSONArray agents = fixtures.getJSONArray("chats").getJSONObject(0).getJSONArray("agents");
+        JSONArray cases = fixtures.getJSONArray("modelSelections");
+        NativeModelSelection.Memory memory = new NativeModelSelection.Memory();
+        for (int i = 0; i < cases.length(); i++) {
+            JSONObject test = cases.getJSONObject(i), input = test.getJSONObject("input");
+            if (input.has("effort")) {
+                memory.remember(new NativeModelSelection(input.getString("backend"), input.getString("model"), input.getString("effort")));
+            } else {
+                JSONObject agent = null;
+                for (int j = 0; j < agents.length(); j++) if (agents.getJSONObject(j).getString("backend").equals(input.getString("backend"))) agent = agents.getJSONObject(j);
+                assertNotNull(agent);
+                selection(test.getJSONObject("expected"), memory.choose(agent, input.getString("model")));
+            }
+        }
+    }
+
     private View label(View view, String value) {
         if (value.equals(view.getContentDescription()) || view instanceof TextView && value.equals(((TextView) view).getText().toString())) return view;
         if (view instanceof ViewGroup) for (int i = 0; i < ((ViewGroup) view).getChildCount(); i++) {
@@ -179,6 +197,38 @@ public class NativeBehaviorTest {
             assertNull(first(menu, NativeReasoningSlider.class));
             menu.bind(new NativeModelSelection("claude", "imported-custom", ""));
             assertNotNull(label(menu, "imported-custom"));
+        }
+    }
+
+    @Test public void modelMenuRemembersEffortAcrossAgentSwitchesAndReopening() throws Exception {
+        JSONArray agents = fixtures().getJSONArray("chats").getJSONObject(0).getJSONArray("agents");
+        try (ActivityController<Activity> controller = Robolectric.buildActivity(Activity.class).setup()) {
+            NativeUi ui = new NativeUi(controller.get(), false);
+            NativeModelSelection.Memory memory = new NativeModelSelection.Memory();
+            AtomicReference<NativeModelSelection> changed = new AtomicReference<>(new NativeModelSelection("claude", "claude-sonnet", "high"));
+            NativeAgentModelMenu menu = new NativeAgentModelMenu(ui, agents, changed.get(), "claude", false, memory, changed::set);
+            label(menu, "Claude Sonnet").performClick();
+            assertEquals("high", changed.get().effort);
+            label(menu, "GPT-6.1 Codex").performClick();
+            NativeReasoningSlider slider = first(menu, NativeReasoningSlider.class);
+            assertTrue(slider.onKeyDown(KeyEvent.KEYCODE_DPAD_LEFT, new KeyEvent(KeyEvent.ACTION_DOWN, KeyEvent.KEYCODE_DPAD_LEFT)));
+            assertEquals("medium", changed.get().effort);
+            // A new menu models closing and reopening the popover.
+            menu = new NativeAgentModelMenu(ui, agents, changed.get(), "claude", false, memory, changed::set);
+            label(menu, "Claude Sonnet").performClick();
+            assertEquals("high", changed.get().effort);
+            slider = first(menu, NativeReasoningSlider.class);
+            assertEquals(2, slider.getProgress());
+            assertTrue(slider.onKeyDown(KeyEvent.KEYCODE_DPAD_LEFT, new KeyEvent(KeyEvent.ACTION_DOWN, KeyEvent.KEYCODE_DPAD_LEFT)));
+            assertTrue(slider.onKeyDown(KeyEvent.KEYCODE_DPAD_LEFT, new KeyEvent(KeyEvent.ACTION_DOWN, KeyEvent.KEYCODE_DPAD_LEFT)));
+            assertEquals("", changed.get().effort);
+            label(menu, "GPT-6.1 Codex").performClick();
+            assertEquals("medium", changed.get().effort);
+            label(menu, "Claude Fixed").performClick();
+            assertNull(first(menu, NativeReasoningSlider.class));
+            label(menu, "Claude Sonnet").performClick();
+            assertEquals("", changed.get().effort);
+            assertEquals(0, first(menu, NativeReasoningSlider.class).getProgress());
         }
     }
 

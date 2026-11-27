@@ -6,6 +6,34 @@ export type ModelSelection = {
   effort: string;
 };
 
+export class ModelSelectionMemory {
+  private efforts = new Map<Backend, Map<string, string>>();
+
+  remember(selection: ModelSelection) {
+    let models = this.efforts.get(selection.backend);
+    if (!models) {
+      models = new Map();
+      this.efforts.set(selection.backend, models);
+    }
+    models.set(selection.model, selection.effort);
+  }
+
+  choose(agent: Agent, model: string): ModelSelection {
+    const selected = chooseModel(agent, model);
+    const effort = this.efforts.get(agent.backend)?.get(model);
+    const entry = agent.catalog.models?.find((item) => item.model === model);
+    if (
+      effort !== undefined &&
+      effortChoices(agent.backend, entry).some(
+        (level) => level.reasoningEffort === effort,
+      )
+    ) {
+      selected.effort = effort;
+    }
+    return selected;
+  }
+}
+
 export function chooseModel(agent: Agent, model: string): ModelSelection {
   const entry = agent.catalog.models?.find((item) => item.model === model);
   const effort =

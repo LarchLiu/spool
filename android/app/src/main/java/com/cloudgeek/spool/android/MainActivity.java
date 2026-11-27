@@ -299,6 +299,7 @@ public final class MainActivity extends Activity {
             model = "",
             effort = "",
             permission = "";
+    private final NativeModelSelection.Memory modelSelectionMemory = new NativeModelSelection.Memory();
     private String theme = "system", language = "system", panel = "";
     private String loginErrorText = "";
     private String goalNotice = "", goalError = "";
@@ -1707,6 +1708,7 @@ public final class MainActivity extends Activity {
     private void clearWorkspaceData(boolean forget) { clearWorkspaceData(forget, false); }
 
     private void clearWorkspaceData(boolean forget, boolean preserveAdb) {
+        modelSelectionMemory.clear();
         closeChatMenu();
         chatActionPending = "";
         if (forget) serverWorkspaces.remove(serverProfiles.selected);
@@ -4040,7 +4042,7 @@ public final class MainActivity extends Activity {
         NativePopover menu = NativePopover.model(ui);
         NativeAgentModelMenu[] content = new NativeAgentModelMenu[1];
         content[0] = new NativeAgentModelMenu(ui, agents,
-                new NativeModelSelection(backend, model, effort), chat == null ? "" : chat.optString("backend"), next -> {
+                new NativeModelSelection(backend, model, effort), chat == null ? "" : chat.optString("backend"), false, modelSelectionMemory, next -> {
                     if (chat != null && !canCreateInProject() && !next.backend.equals(chat.optString("backend"))) {
                         NativeModelSelection original = NativeModelSelection.chat(agents, chat);
                         backend = original.backend;

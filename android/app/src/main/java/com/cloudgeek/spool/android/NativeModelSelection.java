@@ -1,7 +1,9 @@
 package com.cloudgeek.spool.android;
 
 import java.util.ArrayList;
+import java.util.HashMap;
 import java.util.List;
+import java.util.Map;
 import org.json.JSONArray;
 import org.json.JSONObject;
 
@@ -16,6 +18,24 @@ final class NativeModelSelection {
     }
 
     NativeModelSelection withEffort(String value) { return new NativeModelSelection(backend, model, value); }
+
+    static final class Memory {
+        private final Map<String, Map<String, String>> efforts = new HashMap<>();
+
+        void remember(NativeModelSelection selection) {
+            efforts.computeIfAbsent(selection.backend, ignored -> new HashMap<>()).put(selection.model, selection.effort);
+        }
+
+        NativeModelSelection choose(JSONObject agent, String id) {
+            NativeModelSelection selected = NativeModelSelection.choose(agent, id);
+            Map<String, String> models = efforts.get(selected.backend);
+            String effort = models == null ? null : models.get(id);
+            return effort != null && levels(selected.backend, model(agent, id)).contains(effort)
+                    ? selected.withEffort(effort) : selected;
+        }
+
+        void clear() { efforts.clear(); }
+    }
 
     static JSONObject entry(String id) {
         try { return new JSONObject().put("model", id).put("displayName", id); }

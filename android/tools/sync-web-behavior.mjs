@@ -139,6 +139,22 @@ const translations=locale=>(key,values={})=>(locale==='zh-CN'?chinese[key]||engl
 const modelCases=[];
 for(const agent of agents)for(const id of [...agent.catalog.models.map(item=>item.model),'imported-custom'])
  modelCases.push({agent,model:id,expected:model.chooseModel(agent,id),levels:model.effortChoices(agent.backend,agent.catalog.models.find(item=>item.model===id)).map(item=>item.reasoningEffort)});
+const modelMemory=new model.ModelSelectionMemory();
+const modelSelections=[
+ {backend:'claude',model:'claude-sonnet',effort:'high'},
+ {backend:'codex',model:'gpt-6.1-codex'},
+ {backend:'codex',model:'gpt-6.1-codex',effort:'medium'},
+ {backend:'claude',model:'claude-sonnet'},
+ {backend:'claude',model:'claude-fixed'},
+ {backend:'claude',model:'claude-sonnet',effort:''},
+ {backend:'codex',model:'gpt-6.1-codex'},
+ {backend:'claude',model:'claude-sonnet'},
+ {backend:'claude',model:'claude-sonnet',effort:'max'},
+ {backend:'claude',model:'claude-sonnet'},
+].map(input=>{
+ if('effort' in input){modelMemory.remember(input);return {input};}
+ return {input,expected:modelMemory.choose(agents.find(agent=>agent.backend===input.backend),input.model)};
+});
 const value={
  slashCommands,agentCommandCases,commandCatalog,commandCases,chatStates,inputTranscripts,sendButtonCases,composerLayoutCases,
  permissionCases,
@@ -160,6 +176,7 @@ const value={
  attachmentDrafts:draftCases,
  attachmentPaths:['chat/id','chat?one','chat with spaces'].map((chatID,index)=>({chatID,fileID:['file?id','file/one','file with spaces'][index],expected:attachments.attachmentURL(chatID,{id:['file?id','file/one','file with spaces'][index]})})),
  models:modelCases,
+ modelSelections,
  chats:[{backend:'claude',model:'imported-custom',reasoning_effort:'high'},{backend:'codex',model:'',reasoning_effort:''}].map(chat=>({agents,chat,expected:model.chatSelection(agents,chat)})),
  activities:['en','zh-CN'].flatMap(locale=>activityCases.map(input=>{
   const items=activity.activitiesFromParts(input.parts,input.backend,translations(locale));

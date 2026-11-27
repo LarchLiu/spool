@@ -9393,6 +9393,102 @@
       "levels": []
     }
   ],
+  "modelSelections": [
+    {
+      "input": {
+        "backend": "claude",
+        "model": "claude-sonnet",
+        "effort": "high"
+      }
+    },
+    {
+      "input": {
+        "backend": "codex",
+        "model": "gpt-6.1-codex"
+      },
+      "expected": {
+        "backend": "codex",
+        "model": "gpt-6.1-codex",
+        "effort": "high"
+      }
+    },
+    {
+      "input": {
+        "backend": "codex",
+        "model": "gpt-6.1-codex",
+        "effort": "medium"
+      }
+    },
+    {
+      "input": {
+        "backend": "claude",
+        "model": "claude-sonnet"
+      },
+      "expected": {
+        "backend": "claude",
+        "model": "claude-sonnet",
+        "effort": "high"
+      }
+    },
+    {
+      "input": {
+        "backend": "claude",
+        "model": "claude-fixed"
+      },
+      "expected": {
+        "backend": "claude",
+        "model": "claude-fixed",
+        "effort": ""
+      }
+    },
+    {
+      "input": {
+        "backend": "claude",
+        "model": "claude-sonnet",
+        "effort": ""
+      }
+    },
+    {
+      "input": {
+        "backend": "codex",
+        "model": "gpt-6.1-codex"
+      },
+      "expected": {
+        "backend": "codex",
+        "model": "gpt-6.1-codex",
+        "effort": "medium"
+      }
+    },
+    {
+      "input": {
+        "backend": "claude",
+        "model": "claude-sonnet"
+      },
+      "expected": {
+        "backend": "claude",
+        "model": "claude-sonnet",
+        "effort": ""
+      }
+    },
+    {
+      "input": {
+        "backend": "claude",
+        "model": "claude-sonnet",
+        "effort": "max"
+      }
+    },
+    {
+      "input": {
+        "backend": "claude",
+        "model": "claude-sonnet"
+      },
+      "expected": {
+        "backend": "claude",
+        "model": "claude-sonnet",
+        "effort": ""
+      }
+    }
+  ],
   "chats": [
     {
       "agents": [

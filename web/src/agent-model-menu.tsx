@@ -1,8 +1,9 @@
 import { Check } from "lucide-react";
+import { useRef } from "react";
 import { effortLabel, type Translator } from "./i18n";
 import type { Agent } from "./types";
 import {
-  chooseModel,
+  ModelSelectionMemory,
   effortChoices,
   type ModelSelection,
 } from "./model-selection";
@@ -12,15 +13,23 @@ export function AgentModelMenu({
   agents,
   selection,
   currentBackend,
+  memory,
   t,
   onChange,
 }: {
   agents: Agent[];
   selection: ModelSelection;
   currentBackend?: ModelSelection["backend"];
+  memory?: ModelSelectionMemory;
   t: Translator;
   onChange: (selection: ModelSelection) => void;
 }) {
+  const localMemory = useRef(new ModelSelectionMemory());
+  const selections = memory || localMemory.current;
+  const change = (next: ModelSelection) => {
+    selections.remember(next);
+    onChange(next);
+  };
   const agent = agents.find((item) => item.backend === selection.backend);
   const model = agent?.catalog.models?.find(
     (item) => item.model === selection.model,
@@ -94,7 +103,10 @@ export function AgentModelMenu({
                     }
                     aria-pressed={active}
                     disabled={!available}
-                    onClick={() => onChange(chooseModel(item, model.model))}
+                    onClick={() => {
+                      selections.remember(selection);
+                      change(selections.choose(item, model.model));
+                    }}
                   >
                     <span
                       title={
@@ -126,7 +138,7 @@ export function AgentModelMenu({
               value={levelIndex}
               disabled={levels.length < 2}
               onChange={(event) =>
-                onChange({
+                change({
                   ...selection,
                   effort: levels[Number(event.target.value)].reasoningEffort,
                 })
