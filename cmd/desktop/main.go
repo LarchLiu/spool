@@ -38,6 +38,9 @@ type panel struct {
 	chatLoaded             bool
 	chatStarting           bool
 	fileAccessPending      bool
+	attachmentDropPending  bool
+	attachmentDragView     *mygo.WebView
+	attachmentDrag         desktopAttachmentDrag
 	settingsView           *mygo.WebView
 	settingsFailed         bool
 	devFrontend            *desktopDevFrontend
@@ -128,11 +131,11 @@ func runDesktop() (runErr error) {
 	development := mygo.IsDev()
 	root := flag.String("data-dir", workspace.DefaultDataDir(development), "Data directory (database in db/spool.sqlite)")
 	smoke := flag.String("release-smoke", "", "Probe the packaged desktop using fresh temporary data; write a JSON report")
-	smokeProbe := flag.String("smoke-probe", "", "Run only the notifications, servers, server-startup, settings-startup or renderer native probe (requires --release-smoke)")
+	smokeProbe := flag.String("smoke-probe", "", "Run only the notifications, servers, server-startup, settings-startup, renderer or attachments native probe (requires --release-smoke)")
 	smokeHistoryPath := flag.String("smoke-release-history", "", "ReleaseHistory JSON fixture for --release-smoke screenshots only")
 	flag.Parse()
-	if *smokeProbe != "" && (*smoke == "" || (*smokeProbe != "notifications" && *smokeProbe != "servers" && *smokeProbe != "server-startup" && *smokeProbe != "settings-startup" && *smokeProbe != "renderer")) {
-		return fmt.Errorf("--smoke-probe only accepts notifications, servers, server-startup, settings-startup or renderer and requires --release-smoke")
+	if *smokeProbe != "" && (*smoke == "" || (*smokeProbe != "notifications" && *smokeProbe != "servers" && *smokeProbe != "server-startup" && *smokeProbe != "settings-startup" && *smokeProbe != "renderer" && *smokeProbe != "attachments")) {
+		return fmt.Errorf("--smoke-probe only accepts notifications, servers, server-startup, settings-startup, renderer or attachments and requires --release-smoke")
 	}
 	var smokeHistory *appupdate.ReleaseHistory
 	if *smokeHistoryPath != "" {
@@ -299,13 +302,20 @@ func runDesktop() (runErr error) {
 		opts := mygo.WindowOptions{Title: p.windowTitle(), Width: 1280, Height: 860, MinWidth: 840, MinHeight: 580, StateKey: "main", Content: ui.View(p.view)}
 		configureWindowChrome(&opts, runtime.GOOS)
 		p.window = mygo.NewWindow(opts)
+		p.window.OnFileDrop(p.receiveAttachmentDrop)
 		p.notificationsSupported = mygo.NotificationsSupported()
 		p.notificationEvents = service.SubscribeDesktopNotifications()
 		p.watchDesktopNotifications(done)
 		p.setDesktopNotificationFocused(p.window.IsFocused())
 		p.window.OnFocus(func() { p.setDesktopNotificationFocused(true) })
-		p.window.OnBlur(func() { p.setDesktopNotificationFocused(false) })
-		p.window.OnHide(func() { p.setDesktopNotificationFocused(false) })
+		p.window.OnBlur(func() {
+			p.clearAttachmentDrag()
+			p.setDesktopNotificationFocused(false)
+		})
+		p.window.OnHide(func() {
+			p.clearAttachmentDrag()
+			p.setDesktopNotificationFocused(false)
+		})
 		mygo.Theme.OnUpdated(p.broadcastDesktopAppearance)
 		if err := p.loadSettingsView(); err != nil {
 			p.settingsFailed = true
@@ -364,6 +374,8 @@ func runDesktop() (runErr error) {
 				go p.smokeServersOnly(*smoke, smokeResult)
 			} else if *smokeProbe == "renderer" {
 				go p.smokeRendererOnly(*smoke, smokeResult)
+			} else if *smokeProbe == "attachments" {
+				go p.smokeAttachmentsOnly(*smoke, smokeResult)
 			} else if *smokeProbe == "settings-startup" {
 				go p.smokeSettingsStartupOnly(*smoke, smokeResult)
 			} else if startupProbe != nil {
@@ -459,6 +471,10 @@ func (p *panel) action(fn func() error) {
 	}()
 }
 func (p *panel) view(c *ui.Context) {
+	if p.attachmentDragView != nil && (p.tab != "Chat" || p.serverDialogOpen ||
+		p.chatView != p.attachmentDragView || p.chatPresentedView != p.attachmentDragView) {
+		p.clearAttachmentDrag()
+	}
 	if p.serverDialogRequested && !p.serverDialogOpen && p.serverDialog != nil {
 		// Give the editor its measured size behind the workspace so its first
 		// native backing frame is ready before the modal is revealed.

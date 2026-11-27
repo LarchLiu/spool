@@ -6,12 +6,30 @@ import android.widget.LinearLayout;
 /** CSS border/content flow keeps fractional density until each cumulative edge is laid out. */
 final class NativeComposerBox extends NativeSurface {
     private final float density;
+    NativeAttachmentDrop fileDrop;
 
     NativeComposerBox(NativeUi ui) {
         super(ui, ui.elevated, ui.borderStrong, 19, 0, 8, 32);
         useAnalyticBorder();
         density = getResources().getDisplayMetrics().density;
         setPadding(ui.dp(1), ui.dp(1), ui.dp(1), ui.dp(1));
+    }
+
+    @Override public boolean dispatchDragEvent(android.view.DragEvent event) {
+        if (fileDrop == null) return super.dispatchDragEvent(event);
+        boolean documents = fileDrop.handles(event);
+        int action = event.getAction();
+        if (action == android.view.DragEvent.ACTION_DRAG_STARTED || action == android.view.DragEvent.ACTION_DRAG_ENDED) {
+            // URI drags can be either documents or ordinary links. Enroll the
+            // editor at start and finish its lifecycle even when files hover.
+            boolean handled = super.dispatchDragEvent(event);
+            return (documents && fileDrop.dispatch(event)) || handled;
+        }
+        if (documents) return fileDrop.dispatch(event);
+        // A non-document drop still ends any advertised file hover, then keeps
+        // the editor's normal text/link insertion path.
+        if (action == android.view.DragEvent.ACTION_DROP) fileDrop.dispatch(event);
+        return super.dispatchDragEvent(event);
     }
 
     private float height(View child) {

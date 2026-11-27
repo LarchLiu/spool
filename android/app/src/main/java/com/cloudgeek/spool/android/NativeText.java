@@ -193,6 +193,7 @@ final class NativeText {
             case "Downloading update: {percent}%": value = "正在下载更新：{percent}%"; break;
             case "Downloading {name}…": value = "正在下载 {name}…"; break;
             case "Drag to reorder": value = "拖动调整顺序"; break;
+            case "Drop files or images here": value = "将文件或图片拖到这里"; break;
             case "Each uploaded file must be at most 64 MB": value = "每个上传文件不能超过 64 MB"; break;
             case "Edit files": value = "编辑文件"; break;
             case "Edit message": value = "编辑消息"; break;
@@ -809,6 +810,7 @@ final class NativeText {
             case "Downloading update: {percent}%": value = "更新をダウンロード中：{percent}%"; break;
             case "Downloading {name}…": value = "{name} をダウンロード中…"; break;
             case "Drag to reorder": value = "ドラッグして並べ替え"; break;
+            case "Drop files or images here": value = "ここにファイル・画像をドロップ"; break;
             case "Each uploaded file must be at most 64 MB": value = "各アップロードファイルは 64 MB 以下にしてください"; break;
             case "Edit files": value = "ファイルを編集"; break;
             case "Edit message": value = "メッセージを編集"; break;

@@ -162,6 +162,7 @@ import type { Translator } from "./i18n";
 import { parsePreferences, preferencesStorageKey, type UIPreferences } from "./preferences";
 import { usePresentation } from "./use-presentation";
 import { AttachmentCards, ImagePreview } from "./attachments";
+import { useAttachmentDrop } from "./use-attachment-drop";
 import {
   pasteAttachments,
   prepareAttachments,
@@ -2184,7 +2185,7 @@ function App() {
     }
   }
   async function addFiles(selected: File[]) {
-    if (!selected.length || preparingFiles || posting || !composerWritable)
+    if (!selected.length || preparingFiles || posting || !composerWritable || remote.target)
       return;
     const validation = validateAttachments([...filesRef.current, ...selected]);
     if (validation) {
@@ -2210,6 +2211,12 @@ function App() {
       setPreparingFiles(false);
     }
   }
+  const attachmentDrop = useAttachmentDrop(
+    composerWritable && !posting && !preparingFiles && !remote.target,
+    addFiles,
+    JSON.stringify([user?.id, project, chatID, draftVersion]),
+    (message) => setError(t(message as MessageKey)),
+  );
   async function logout() {
     try {
       await api("/logout", {});
@@ -2883,12 +2890,20 @@ function App() {
             />
           )}
           <form
-            className="composer"
+            ref={attachmentDrop.ref}
+            className={attachmentDrop.active ? "composer composer-dragging" : "composer"}
+            {...attachmentDrop.events}
             onSubmit={(e) => {
               e.preventDefault();
               submitDraft();
             }}
           >
+            {attachmentDrop.active && (
+              <div className="composer-drop-hint" role="status">
+                <Plus size={22} />
+                <span>{t("Drop files or images here")}</span>
+              </div>
+            )}
             {remote.open && <RemoteTargetMenu remote={remote} t={t} />}
             {mcp.open && <MCPMenu mcp={mcp} t={t} />}
             {commandOpen && (

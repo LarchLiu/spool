@@ -32,17 +32,31 @@ export function pasteAttachments(
 ) {
   const clipboard = event.clipboardData;
   if (!clipboard) return;
-  let files = Array.from(clipboard.files);
-  // Some webviews expose pasted images only through clipboard items.
-  if (!files.length) {
-    files = Array.from(clipboard.items).flatMap((item) => {
-      const file = item.kind === "file" ? item.getAsFile() : null;
-      return file ? [file] : [];
-    });
-  }
+  const files = attachmentFiles(clipboard);
   if (!files.length) return;
   event.preventDefault();
   addFiles(files);
+}
+
+export function attachmentFiles(transfer: DataTransfer): File[] {
+  const files = Array.from(transfer.files);
+  // Some webviews expose files only through transfer items.
+  return files.length
+    ? files
+    : Array.from(transfer.items).flatMap((item) => {
+        const file = item.kind === "file" ? item.getAsFile() : null;
+        return file ? [file] : [];
+      });
+}
+
+export function hasAttachmentFiles(transfer: DataTransfer | null): boolean {
+  // During dragover the file bytes are protected; only metadata is available.
+  return (
+    !!transfer &&
+    (Array.from(transfer.types).includes("Files") ||
+      transfer.files.length > 0 ||
+      Array.from(transfer.items).some((item) => item.kind === "file"))
+  );
 }
 
 export function validateAttachments(files: { size: number }[]): string | null {

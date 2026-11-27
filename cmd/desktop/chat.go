@@ -439,7 +439,7 @@ func (p *panel) chatContent(c *ui.Context) {
 			})
 			return
 		}
-		ui.WebView(c, p.chatView).Fill()
+		p.attachmentDropTarget(ui.WebView(c, p.chatView).Fill())
 		return
 	}
 	ui.Column(c).Fill().Padding(28).Gap(16).Children(func() {

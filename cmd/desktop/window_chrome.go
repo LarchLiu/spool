@@ -31,6 +31,12 @@ window.mygo?.on("spool:federation", state => {
 window.mygo?.on("spool:file-access-result", result => {
   window.dispatchEvent(new CustomEvent("spool:file-access-result", {detail: result}));
 });
+window.mygo?.on("spool:attachment-drop", delivery => {
+  window.spoolAttachmentDrop?.receive(delivery);
+});
+window.mygo?.on("spool:attachment-drag", state => {
+  window.spoolAttachmentDrop?.hover(state);
+});
 window.mygo?.on("spool:download", result => {
   window.dispatchEvent(new CustomEvent("spool:download", {detail: result}));
 });

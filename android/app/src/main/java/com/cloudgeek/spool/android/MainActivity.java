@@ -2930,7 +2930,7 @@ public final class MainActivity extends Activity {
     }
 
     private void workspacePage() {
-        LinearLayout page = ui.workspace();
+        NativeAttachmentDrop.Page page = ui.workspace();
         NativeUi.Header header = ui.new Header(tr("Workspace", "工作空间"), projectName(),
                 this::openSidebar, this::openOnlinePeople, () -> openFiles("."));
         workspaceHeader = header;
@@ -2974,6 +2974,8 @@ public final class MainActivity extends Activity {
         });
         remoteAgents.attach(ui, composerView);
         composer = composerView.input;
+        new NativeAttachmentDrop(this, ui, composerView.box,
+                this::canAddAttachments, this::addAttachmentUris).advertiseOn(page);
         fileBar = composerView.attachments;
         modelButton = composerView.model;
         permissionButton = composerView.permission;
@@ -3088,7 +3090,7 @@ public final class MainActivity extends Activity {
         focusComposerIfRequested();
         String hint = composerHint();
         if (!TextUtils.equals(composer.getHint(), hint)) composer.setHint(hint);
-        composerView.add.setEnabled(!busy && !remoteBusy && !remote && writable() && !editing);
+        composerView.add.setEnabled(canAddAttachments());
         modelButton.setEnabled(!busy && !remoteBusy && !running && writable());
         permissionButton.setEnabled(!busy && !remoteBusy && !remote && !running && writable());
         modelButton.setVisibility(projectID.isEmpty() ? View.GONE : View.VISIBLE);
@@ -4801,8 +4803,13 @@ public final class MainActivity extends Activity {
         });
     }
 
+    private boolean canAddAttachments() {
+        return writable() && !busy && !(delivering() && editingQueue)
+                && (remoteAgents == null || !remoteAgents.busy() && !remoteAgents.targeted());
+    }
+
     private void pickFiles() {
-        if (!writable() || busy) return;
+        if (!canAddAttachments()) return;
         captureDraft();
         pickerDraft = draft();
         Intent intent =
@@ -4905,15 +4912,25 @@ public final class MainActivity extends Activity {
         boolean selecting = pickerDraft != null;
         pickerDraft = null;
         if (resultCode != RESULT_OK || data == null || !selecting) return;
-        final String key = selectionKey();
-        final String selectedProject = projectID;
-        final int version = draftVersion;
         List<Uri> uris = new ArrayList<>();
         ClipData clips = data.getClipData();
         if (clips != null)
-            for (int i = 0; i < clips.getItemCount() && i < 6; i++)
+            for (int i = 0; i < clips.getItemCount(); i++)
                 uris.add(clips.getItemAt(i).getUri());
         else if (data.getData() != null) uris.add(data.getData());
+        addAttachmentUris(uris, () -> {});
+    }
+
+    private void addAttachmentUris(List<Uri> uris, Runnable release) {
+        if (!canAddAttachments() || uris.isEmpty() || uris.size() + draft().files.size() > 6) {
+            release.run();
+            if (uris.size() + draft().files.size() > 6)
+                toast(new IOException(ui.t("Attach at most 6 files, up to 16 MB total")));
+            return;
+        }
+        final String key = selectionKey();
+        final String selectedProject = projectID;
+        final int version = draftVersion;
         final int token = generation, session = authEpoch;
         io.execute(
                 () -> {
@@ -4961,7 +4978,8 @@ public final class MainActivity extends Activity {
                                 token,
                                 () -> {
                                     if (session != authEpoch || version != draftVersion
-                                            || !selectedProject.equals(projectID) || !key.equals(selectionKey())) return;
+                                            || !selectedProject.equals(projectID) || !key.equals(selectionKey())
+                                            || !canAddAttachments()) return;
                                     Draft target = draft();
                                     int bytes = 0;
                                     for (Attachment file : target.files) bytes += file.data.length;
@@ -4981,6 +4999,8 @@ public final class MainActivity extends Activity {
                                 });
                     } catch (Exception e) {
                         post(token, () -> toast(e));
+                    } finally {
+                        release.run();
                     }
                 });
     }

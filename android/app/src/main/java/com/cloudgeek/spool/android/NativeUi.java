@@ -100,8 +100,8 @@ final class NativeUi extends WebPalette {
         return view;
     }
 
-    LinearLayout workspace() {
-        LinearLayout view = column();
+    NativeAttachmentDrop.Page workspace() {
+        NativeAttachmentDrop.Page view = new NativeAttachmentDrop.Page(context);
         view.setBackground(workspaceBackground());
         // CSS box shadows overflow their border box without reserving layout space.
         view.setClipChildren(false);
@@ -683,7 +683,7 @@ final class NativeUi extends WebPalette {
         final android.widget.HorizontalScrollView attachmentScroll;
         final ChoiceButton model, permission;
         final IconButton send, add;
-        final NativeSurface box;
+        final NativeComposerBox box;
         final NativeComposerControls bottom;
         final NativeComposerCommands commands;
         private Boolean phoneLayout;
