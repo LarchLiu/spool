@@ -77,7 +77,7 @@ func main() {
 		var web *mygo.WebView
 		opts := mygo.WindowOptions{
 			Title: "Spool Resize Diagnostic · " + *mode,
-			Width: 1100, Height: 720, MinWidth: 840, MinHeight: 580,
+			Width: 1100, Height: 720, MinWidth: 480, MinHeight: 580,
 			TitleBarStyle:        mygo.TitleBarHidden,
 			TrafficLightPosition: &mygo.Point{X: 16, Y: 20},
 		}

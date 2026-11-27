@@ -321,7 +321,7 @@ func runDesktop() (runErr error) {
 	mygo.App.WhenReady(func() {
 		p.applyPresentation()
 		mygo.App.OnLocaleChanged(func(string) { p.updateNativeLabels() })
-		opts := mygo.WindowOptions{Title: p.windowTitle(), Width: 1280, Height: 860, MinWidth: 840, MinHeight: 580, StateKey: "main", Content: ui.View(p.view)}
+		opts := mygo.WindowOptions{Title: p.windowTitle(), Width: 1280, Height: 860, MinWidth: 480, MinHeight: 580, StateKey: "main", Content: ui.View(p.view)}
 		configureWindowChrome(&opts, runtime.GOOS)
 		p.window = mygo.NewWindow(opts)
 		p.window.OnFileDrop(p.receiveAttachmentDrop)
