@@ -11,7 +11,7 @@ export async function renderComposerLayoutReferences({browser,url,output,fontCSS
    const page=await context.newPage(),errors=[];
    page.on('pageerror',error=>errors.push(String(error)));
    await page.goto(`${url}?screen=viewport&theme=${theme}`);
-   await page.waitForSelector('.composer textarea');
+   await page.waitForSelector('.composer textarea').catch(error=>{throw new Error([...errors,error.message].join('\n'));});
    await page.addStyleTag({content:fontCSS});
    await page.evaluate(theme=>{
     document.documentElement.dataset.theme=theme;
@@ -45,6 +45,7 @@ export async function renderComposerLayoutReferences({browser,url,output,fontCSS
       paint:{left:Math.round(r.left)*density,top:Math.round(r.top)*density,right:Math.round(r.right)*density,bottom:Math.round(r.bottom)*density,radius:parseFloat(style.borderRadius)*density},
       inputStyle:{paddingLeft:parseFloat(inputStyle.paddingLeft)*density,paddingRight:parseFloat(inputStyle.paddingRight)*density,paddingTop:parseFloat(inputStyle.paddingTop)*density,paddingBottom:parseFloat(inputStyle.paddingBottom)*density,fontSize:parseFloat(inputStyle.fontSize)*density,lineHeight:parseFloat(inputStyle.lineHeight)*density},
       value:input.value,hint:input.placeholder,modelLabel:modelLabel.textContent,permissionLabel:permission.querySelector('span').textContent,
+      modelLabelVisible:getComputedStyle(modelLabel).display!=='none',
       modelLabelTruncated:range.getBoundingClientRect().width>modelLabel.getBoundingClientRect().width+1/64,
       permissionLabelVisible:getComputedStyle(permission.querySelector('span')).display!=='none'};
     },density);

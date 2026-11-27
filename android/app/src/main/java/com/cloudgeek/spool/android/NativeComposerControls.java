@@ -29,6 +29,8 @@ final class NativeComposerControls extends ViewGroup {
         int buttonSpec = MeasureSpec.makeMeasureSpec(ui.dp(32), MeasureSpec.EXACTLY);
         int modelHeight = MeasureSpec.makeMeasureSpec(ui.dp(30), MeasureSpec.EXACTLY);
         int natural = MeasureSpec.makeMeasureSpec(0, MeasureSpec.UNSPECIFIED);
+        boolean compact = width <= ui.dp(480);
+        permission.setCompact(compact); model.setCompact(compact);
         add.measure(buttonSpec, buttonSpec); send.measure(buttonSpec, buttonSpec);
         permission.measure(natural, buttonSpec);
         model.maximumLabel = phone ? 100 : 155;

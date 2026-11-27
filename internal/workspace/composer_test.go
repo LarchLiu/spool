@@ -23,7 +23,7 @@ import (
 
 func (f *fakeRunner) PermissionModes(_ context.Context, backend chatmodel.Backend, _ string) (chatmodel.PermissionCatalog, error) {
 	c := chatmodel.PermissionCatalog{Backend: backend, Default: chatmodel.DefaultPermissionMode(backend)}
-	for _, id := range []string{"ask", "auto", "manual", "acceptEdits", "plan", "dontAsk", "bypassPermissions"} {
+	for _, id := range []string{"ask", "auto", "fullAccess", "manual", "acceptEdits", "plan", "dontAsk", "bypassPermissions"} {
 		if chatmodel.ValidatePermissionMode(backend, id) == nil {
 			c.Modes = append(c.Modes, chatmodel.PermissionMode{ID: id, Available: true})
 		}

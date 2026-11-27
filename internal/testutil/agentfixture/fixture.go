@@ -313,7 +313,12 @@ func Run(t *testing.T) {
 				if model == "" {
 					model = "test-model"
 				}
-				send(map[string]any{"id": value["id"], "result": map[string]any{"thread": map[string]any{"id": thread}, "model": model, "approvalsReviewer": params["approvalsReviewer"]}})
+				sandbox := map[string]string{"workspace-write": "workspaceWrite", "read-only": "readOnly", "danger-full-access": "dangerFullAccess"}[StringValue(params["sandbox"])]
+				response := map[string]any{"thread": map[string]any{"id": thread}, "model": model, "approvalsReviewer": params["approvalsReviewer"], "approvalPolicy": params["approvalPolicy"], "sandbox": map[string]any{"type": sandbox}}
+				if data, err := os.ReadFile("fixture-applied-permissions.json"); err == nil {
+					_ = json.Unmarshal(data, &response)
+				}
+				send(map[string]any{"id": value["id"], "result": response})
 				// Replayed output must not be attached to the next user turn.
 				send(map[string]any{"method": "item/agentMessage/delta", "params": map[string]any{"threadId": thread, "turnId": "old-turn", "itemId": "old-item", "delta": "STALE"}})
 			case "thread/goal/set", "thread/goal/get", "thread/goal/clear":

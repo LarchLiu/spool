@@ -597,6 +597,7 @@ final class NativeUi extends WebPalette {
         String kind;
         int maximumLabel = 100;
         int viewportWidth;
+        private boolean compact;
         private int fontSize;
         private int inkColor;
         private String inkKind;
@@ -618,7 +619,7 @@ final class NativeUi extends WebPalette {
             chevron = decorativeIcon("chevron-down", permission ? 11 : 12);
             LinearLayout.LayoutParams chevronParams = new LinearLayout.LayoutParams(dp(permission ? 11 : 12), dp(permission ? 11 : 12));
             chevronParams.setMarginStart(dp(permission ? 6 : 0));
-            // Keep the icon gap when the permission label is hidden by the mobile breakpoint.
+            // Keep the icon gap when the permission label is hidden.
             name.setMarginEnd(dp(permission ? 0 : 5));
             addView(chevron, chevronParams);
             preciseText(label, true);
@@ -644,6 +645,14 @@ final class NativeUi extends WebPalette {
             viewportWidth = width;
             forceLayout();
         }
+        void setCompact(boolean compact) {
+            if (this.compact == compact) return;
+            this.compact = compact;
+            LinearLayout.LayoutParams arrow = (LinearLayout.LayoutParams) chevron.getLayoutParams();
+            arrow.setMarginStart(dp(permission ? 6 : compact ? 5 : 0));
+            chevron.setLayoutParams(arrow);
+            forceLayout();
+        }
         private void updateInk() {
             if (label == null || symbol == null || chevron == null) return;
             int color = danger ? primary : isEnabled() && (isPressed() || isHovered() || !permission && isActivated()) ? NativeUi.this.text : muted;
@@ -659,7 +668,6 @@ final class NativeUi extends WebPalette {
             setAlpha(enabled ? 1 : .45f);
         }
         @Override protected void onMeasure(int widthSpec, int heightSpec) {
-            boolean compact = permission && (viewportWidth > 0 ? viewportWidth <= dp(400) : getResources().getConfiguration().screenWidthDp <= 400);
             boolean phone = viewportWidth > 0 ? viewportWidth <= dp(600) : getResources().getConfiguration().screenWidthDp <= 600;
             int size = permission ? phone ? 10 : 11 : phone ? 9 : 10;
             if (fontSize != size) { fontSize = size; label.setTextSize(TypedValue.COMPLEX_UNIT_SP, size); lineHeight(label, 1.2f); }

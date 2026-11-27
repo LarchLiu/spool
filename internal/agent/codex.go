@@ -164,9 +164,9 @@ func (p *agentProcess) runCodex(ctx context.Context, request AgentRequest, emit 
 	emit = compactionEvents(emit)
 	p.approve = request.Approve
 	defer func() { p.approve = nil }()
-	reviewer := "user"
-	if request.PermissionMode == "auto" {
-		reviewer = "auto_review"
+	permissions := codexPermissionMode(request.PermissionMode)
+	if request.SummaryOnly {
+		permissions.policy, permissions.sandbox = "never", "read-only"
 	}
 	result := AgentResult{SessionID: p.sessionID, Model: p.model, ReasoningEffort: p.effort}
 	if err := p.initializeCodex(ctx); err != nil {
@@ -174,8 +174,8 @@ func (p *agentProcess) runCodex(ctx context.Context, request AgentRequest, emit 
 	}
 	if p.sessionID == "" {
 		params := map[string]any{
-			"cwd": request.WorkingDirectory, "approvalPolicy": "on-request", "approvalsReviewer": reviewer,
-			"sandbox": "workspace-write",
+			"cwd": request.WorkingDirectory, "approvalPolicy": permissions.policy, "approvalsReviewer": permissions.reviewer,
+			"sandbox": permissions.sandbox,
 		}
 		if request.SummaryOnly {
 			config, err := p.codexRPC(ctx, "config/read", map[string]any{"includeLayers": false, "cwd": request.WorkingDirectory})
@@ -222,8 +222,8 @@ func (p *agentProcess) runCodex(ctx context.Context, request AgentRequest, emit 
 		if err != nil {
 			return result, err, false
 		}
-		if applied := stringValue(response["approvalsReviewer"]); applied != "" && applied != reviewer {
-			return result, fmt.Errorf("Codex did not apply the selected approval mode; no message was sent"), false
+		if err := permissions.validateApplied(response); err != nil {
+			return result, err, false
 		}
 		id := nestedString(response, "thread", "id")
 		if !chatmodel.ValidID(id) || (request.NativeSessionID != "" && id != request.NativeSessionID) {
@@ -281,7 +281,8 @@ func (p *agentProcess) runCodex(ctx context.Context, request AgentRequest, emit 
 		}
 		settings := map[string]any{"threadId": p.sessionID}
 		if command.Name == "review" {
-			settings["approvalsReviewer"] = reviewer
+			settings["approvalPolicy"], settings["approvalsReviewer"] = permissions.policy, permissions.reviewer
+			settings["sandboxPolicy"] = permissions.sandboxPolicy(request)
 		}
 		if request.Model != "" && request.Model != p.model {
 			settings["model"] = request.Model
@@ -335,8 +336,8 @@ func (p *agentProcess) runCodex(ctx context.Context, request AgentRequest, emit 
 	}
 	params := map[string]any{
 		"threadId": p.sessionID, "cwd": request.WorkingDirectory,
-		"approvalPolicy": "on-request", "approvalsReviewer": reviewer,
-		"sandboxPolicy": map[string]any{"type": "workspaceWrite", "writableRoots": append([]string{request.WorkingDirectory}, request.WritableDirectories...), "networkAccess": false},
+		"approvalPolicy": permissions.policy, "approvalsReviewer": permissions.reviewer,
+		"sandboxPolicy": permissions.sandboxPolicy(request),
 		"input":         input,
 	}
 	if request.SummaryOnly {

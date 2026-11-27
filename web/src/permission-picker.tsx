@@ -22,6 +22,7 @@ const labels: Record<string, MessageKey> = {
   ask: "Ask for approval",
   manual: "Manual",
   auto: "Auto",
+  fullAccess: "Full access",
   acceptEdits: "Accept edits",
   plan: "Plan",
   dontAsk: "Don't ask",
@@ -31,6 +32,8 @@ const descriptions: Record<string, MessageKey> = {
   ask: "You approve requests outside the sandbox.",
   manual: "Confirm operations that require permission.",
   auto: "The agent reviews approval requests automatically.",
+  fullAccess:
+    "Allow file and network access outside the project without approval.",
   acceptEdits: "Allow file edits; ask for other protected operations.",
   plan: "Plan before making changes.",
   dontAsk: "Deny operations that are not already permitted.",
@@ -203,6 +206,7 @@ export function PermissionPicker({
 }) {
   const root = useRef<HTMLDivElement>(null);
   const [confirmBypass, setConfirmBypass] = useState(false);
+  const unrestrictedMode = backend === "codex" ? "fullAccess" : "bypassPermissions";
   useEffect(() => {
     if (!open) setConfirmBypass(false);
   }, [open]);
@@ -236,9 +240,10 @@ export function PermissionPicker({
     <div className="permission-picker" ref={root}>
       <button
         type="button"
-        className={`permission-summary${value.mode === "bypassPermissions" ? " danger" : ""}`}
+        className={`permission-summary${value.mode === unrestrictedMode ? " danger" : ""}`}
         disabled={disabled || value.saving}
         aria-label={`${t("Permissions")}: ${label}`}
+        title={`${t("Permissions")}: ${label}`}
         aria-expanded={open}
         onClick={() => onOpen(!open)}
       >
@@ -271,14 +276,14 @@ export function PermissionPicker({
               key={item.id}
               type="button"
               className={
-                item.id === "bypassPermissions"
+                item.id === unrestrictedMode
                   ? "permission-option danger"
                   : "permission-option"
               }
               disabled={!item.available || value.saving}
               aria-pressed={value.mode === item.id}
               onClick={async () => {
-                if (item.id === "bypassPermissions" && value.mode !== item.id) {
+                if (item.id === unrestrictedMode && value.mode !== item.id) {
                   setConfirmBypass(true);
                   return;
                 }
@@ -302,9 +307,7 @@ export function PermissionPicker({
           ))}
           {confirmBypass && (
             <div className="bypass-confirmation" role="alert">
-              <p>
-                {t("Skip permission checks. Only use in trusted projects.")}
-              </p>
+              <p>{t(descriptions[unrestrictedMode])}</p>
               <div>
                 <button
                   type="button"
@@ -318,17 +321,21 @@ export function PermissionPicker({
                   className="quiet danger"
                   disabled={value.saving}
                   onClick={async () => {
-                    if (await value.choose("bypassPermissions")) onOpen(false);
+                    if (await value.choose(unrestrictedMode)) onOpen(false);
                   }}
                 >
-                  {t("Enable bypass")}
+                  {t(backend === "codex" ? "Enable full access" : "Enable bypass")}
                 </button>
               </div>
             </div>
           )}
           {backend === "codex" && (
             <p className="permission-scope">
-              {t("Project sandbox · network access requires approval")}
+              {t(
+                value.mode === "fullAccess"
+                  ? "Full access · no sandbox or approval prompts"
+                  : "Project sandbox · network access requires approval",
+              )}
             </p>
           )}
         </div>

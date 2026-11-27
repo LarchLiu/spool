@@ -79,6 +79,10 @@ public class NativeComposerLayoutTest {
                     Editable document = composer.input.getText();
                     int start = composer.input.getSelectionStart(), end = composer.input.getSelectionEnd();
                     layout(page, ui.dp(item.getInt("width")), ui.dp(item.getInt("height")));
+                    boolean compact = composer.bottom.getWidth() <= ui.dp(480);
+                    assertEquals(!compact, composer.permission.label.getVisibility() == View.VISIBLE);
+                    assertEquals(!compact, composer.model.label.getVisibility() == View.VISIBLE);
+                    assertTrue(composer.permission.isClickable()); assertTrue(composer.model.isClickable());
                     assertSame(document, composer.input.getText());
                     assertEquals(start, composer.input.getSelectionStart()); assertEquals(end, composer.input.getSelectionEnd());
                     JSONObject headerBox = box(header, page).put("height", header.getHeight() + divider.getHeight());
@@ -95,7 +99,8 @@ public class NativeComposerLayoutTest {
                                     .put("fontSize", composer.input.getTextSize()).put("lineHeight", (float) ReflectionHelpers.getField(composer.input, "spanHeight")))
                             .put("value", composer.input.getText().toString()).put("hint", composer.input.getHint().toString())
                             .put("modelLabel", composer.model.label.getText().toString()).put("permissionLabel", composer.permission.label.getText().toString())
-                            .put("modelLabelTruncated", composer.model.label.getLayout().getEllipsisCount(0) > 0)
+                            .put("modelLabelVisible", composer.model.label.getVisibility() == View.VISIBLE)
+                            .put("modelLabelTruncated", !compact && composer.model.label.getLayout().getEllipsisCount(0) > 0)
                             .put("permissionLabelVisible", composer.permission.label.getVisibility() == View.VISIBLE);
                     samples.put(new JSONObject(item.toString()).put("theme", dark ? "dark" : "light").put("density", density).put("geometry", geometry));
                     Bitmap image = Bitmap.createBitmap(page.getWidth(), page.getHeight(), Bitmap.Config.ARGB_8888);

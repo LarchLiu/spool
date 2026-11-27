@@ -86,7 +86,7 @@ public class NativePermissionTest {
                         ui.cjkFonts = NativeCjkFallbackTest.runtimeFonts();
                         page.setBackgroundColor(ui.elevated);
                         NativePermissionMenu menu = menu(ui, item, ignored -> {}, () -> {});
-                        if (item.optBoolean("confirm")) tagged(menu, "option:bypassPermissions").performClick();
+                        if (item.optBoolean("confirm")) tagged(menu, "option:" + (item.getString("backend").equals("codex") ? "fullAccess" : "bypassPermissions")).performClick();
                         ViewGroup panel = (ViewGroup) menu.popover.panel();
                         layout(panel, Math.min(320, width - 48));
                         JSONObject result = new JSONObject().put("id", item.getString("id")).put("panel", box(panel, panel))
@@ -142,7 +142,7 @@ public class NativePermissionTest {
         }
     }
 
-    @Test @Config(sdk = {26, 35}) public void bypassRequiresOneExplicitConfirmationAndCanBeCancelledOrDismissed() throws Exception {
+    @Test @Config(sdk = {26, 35}) public void fullAccessRequiresOneExplicitConfirmationAndCanBeCancelledOrDismissed() throws Exception {
         RuntimeEnvironment.setQualifiers("w360dp-h800dp-mdpi");
         try (ActivityController<Activity> controller = Robolectric.buildActivity(Activity.class).setup()) {
             NativeUi ui = new NativeUi(controller.get(), false);
@@ -155,20 +155,20 @@ public class NativePermissionTest {
             page.measure(View.MeasureSpec.makeMeasureSpec(360, View.MeasureSpec.EXACTLY), View.MeasureSpec.makeMeasureSpec(800, View.MeasureSpec.EXACTLY)); page.layout(0, 0, 360, 800);
             menu.show(anchor); Shadows.shadowOf(Looper.getMainLooper()).idle();
             tagged(menu, "option:dontAsk").performClick(); assertNull(chosen.get());
-            tagged(menu, "option:bypassPermissions").performClick(); assertNull(chosen.get());
+            tagged(menu, "option:fullAccess").performClick(); assertNull(chosen.get());
             int count = menu.flow.getChildCount();
-            tagged(menu, "option:bypassPermissions").performClick(); assertEquals(count, menu.flow.getChildCount());
+            tagged(menu, "option:fullAccess").performClick(); assertEquals(count, menu.flow.getChildCount());
             tagged(menu, "cancel").performClick(); assertNull(tagged(menu, "confirmation")); assertNull(chosen.get());
-            tagged(menu, "option:bypassPermissions").performClick();
+            tagged(menu, "option:fullAccess").performClick();
             menu.bind("ask", null, true, false);
-            tagged(menu, "enable").performClick(); assertNull("An outstanding discovery cannot enable bypass", chosen.get());
+            tagged(menu, "enable").performClick(); assertNull("An outstanding discovery cannot enable full access", chosen.get());
             menu.bind("ask", catalog(data), false, false);
             View frame = menu.popover.panel().getParent() instanceof View ? (View) menu.popover.panel().getParent() : null;
             assertNotNull(frame); assertTrue(frame.dispatchKeyEvent(new KeyEvent(KeyEvent.ACTION_DOWN, KeyEvent.KEYCODE_ESCAPE)));
             assertFalse(menu.popover.isShowing()); assertTrue(anchor.hasFocus());
             menu.show(anchor); assertNull(tagged(menu, "confirmation"));
-            tagged(menu, "option:bypassPermissions").performClick(); tagged(menu, "enable").performClick();
-            assertEquals("bypassPermissions", chosen.get()); assertFalse(menu.popover.isShowing());
+            tagged(menu, "option:fullAccess").performClick(); tagged(menu, "enable").performClick();
+            assertEquals("fullAccess", chosen.get()); assertFalse(menu.popover.isShowing());
         }
     }
 

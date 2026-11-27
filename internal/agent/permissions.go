@@ -126,14 +126,11 @@ func (r *CLIRunner) PermissionModes(ctx context.Context, backend chatmodel.Backe
 			autoEnabled = false
 		}
 		catalog.Policy, catalog.Sandbox = "on-request", "workspace-write"
-		for _, mode := range []string{"ask", "auto"} {
-			reviewer := "user"
-			if mode == "auto" {
-				reviewer = "auto_review"
-			}
-			available := allowsValue(required, "allowedApprovalsReviewers", reviewer) &&
-				allowsValue(required, "allowedApprovalPolicies", catalog.Policy) &&
-				allowsValue(required, "allowedSandboxModes", catalog.Sandbox)
+		for _, mode := range []string{"ask", "auto", "fullAccess"} {
+			settings := codexPermissionMode(mode)
+			available := allowsValue(required, "allowedApprovalsReviewers", settings.reviewer) &&
+				allowsValue(required, "allowedApprovalPolicies", settings.policy) &&
+				allowsValue(required, "allowedSandboxModes", settings.sandbox)
 			option := chatmodel.PermissionMode{ID: mode, Available: available}
 			if !available {
 				option.Reason = "Restricted by project or administrator policy"
@@ -151,7 +148,7 @@ func (r *CLIRunner) PermissionModes(ctx context.Context, backend chatmodel.Backe
 	if catalog.Validate(catalog.Default) != nil {
 		catalog.Default = ""
 		for _, mode := range catalog.Modes {
-			if mode.Available {
+			if mode.Available && mode.ID != "fullAccess" {
 				catalog.Default = mode.ID
 				break
 			}

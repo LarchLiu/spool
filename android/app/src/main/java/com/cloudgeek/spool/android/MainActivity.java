@@ -3123,7 +3123,7 @@ public final class MainActivity extends Activity {
         permissionButton.bind(permissionLabel(effectivePermission),
                 effectivePermission.equals("ask") || effectivePermission.equals("manual") ? "shield-question" : "shield-check",
                 tr("Permissions", "权限") + ": " + permissionLabel(effectivePermission));
-        permissionButton.setDanger(permission.equals("bypassPermissions"));
+        permissionButton.setDanger(permission.equals("bypassPermissions") || permission.equals("fullAccess"));
         if (remote) {
             NativeModelSelection remoteModel = remoteAgents.selection;
             modelButton.bind(remoteModel.model.isEmpty() ? ui.t("CLI default") : remoteModel.model,

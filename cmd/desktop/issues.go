@@ -111,18 +111,22 @@ func (p *panel) projectIssuesView(c *ui.Context) {
 	ui.Text(c, p.tr("Assignees can send messages, stop responses and answer approvals. Changes also apply to existing task chats; normal chats stay owner-only.")).Wrap().FontSize(12)
 	p.field(c, "Automation model (blank = agent default)", &v.Model)
 	p.field(c, "Automation reasoning level (blank = default)", &v.Effort)
-	modes := []string{"Default", "ask", "auto"}
+	modes := []string{"Default", "ask", "auto", p.tr("Full access")}
 	if v.Backend == chatmodel.BackendClaude {
 		modes = []string{"Default", "manual", "auto", "acceptEdits", "plan", "dontAsk", "bypassPermissions"}
 	}
 	selected = v.Permission
 	if selected == "" {
 		selected = "Default"
+	} else if selected == "fullAccess" {
+		selected = p.tr("Full access")
 	}
 	ui.Select(c, &selected, modes).Label(p.tr("Automation permissions"))
 	v.Permission = selected
 	if selected == "Default" {
 		v.Permission = ""
+	} else if selected == p.tr("Full access") {
+		v.Permission = "fullAccess"
 	}
 	ui.Text(c, p.tr("Each actionable run starts a new chat, prioritizing unfinished work. For new issues, the agent creates a separate codex/issue-N-fix branch from the latest dev and works in a safe checkout/worktree.")).Wrap().FontSize(12)
 	ui.Text(c, p.tr("Only after validation passes does the agent push the fix branch and create or reuse a PR targeting dev. PRs are not merged automatically.")).Wrap().FontSize(12)

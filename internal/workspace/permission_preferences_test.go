@@ -18,6 +18,55 @@ type preferencePermissionRunner struct {
 	probes      int
 }
 
+func TestFullAccessPreferencePersistsAndUnavailablePolicyBlocksSavingAndSending(t *testing.T) {
+	s := testStore(t)
+	u := testUser(t, s, "alice")
+	p := testProject(t, s, u)
+	testAgent(t, s)
+	chat, _ := s.CreateChat(u.ID, p.ID, chatmodel.BackendCodex)
+	runner := &preferencePermissionRunner{}
+	a := NewApp(s, runner, "", "")
+	t.Cleanup(func() { _ = a.Close() })
+	cookie, csrf := loginRequest(t, a, u.Username)
+	path := "/api/permissions?project_id=" + p.ID + "&backend=codex"
+	w := apiRequest(a, "POST", path, `{"mode":"fullAccess"}`, cookie, csrf)
+	if w.Code != 200 {
+		t.Fatal(w.Code, w.Body.String())
+	}
+	for _, suffix := range []string{"", "&chat_id=" + chat.ID} {
+		w = apiRequest(a, "GET", path+suffix, "", cookie, csrf)
+		var catalog chatmodel.PermissionCatalog
+		if w.Code != 200 || json.Unmarshal(w.Body.Bytes(), &catalog) != nil || catalog.Current != "fullAccess" || catalog.Policy != "never" || catalog.Sandbox != "danger-full-access" {
+			t.Fatalf("full access was not saved or described correctly: %d %s", w.Code, w.Body.String())
+		}
+	}
+	w = apiRequest(a, "POST", "/api/chats/"+chat.ID+"/messages", `{"message":"Explicit full access","permission_mode":"fullAccess"}`, cookie, csrf)
+	if w.Code != 202 {
+		t.Fatal(w.Code, w.Body.String())
+	}
+	saved := waitChat(t, s, chat.ID)
+	runner.mu.Lock()
+	ranWithFullAccess := len(runner.requests) == 1 && runner.requests[0].PermissionMode == "fullAccess"
+	runner.mu.Unlock()
+	if !ranWithFullAccess || saved.PermissionMode != "fullAccess" {
+		t.Fatal("full access did not reach the runner and saved chat")
+	}
+	runner.unavailable = "fullAccess"
+	for _, target := range []struct{ path, body string }{
+		{path, `{"mode":"fullAccess"}`},
+		{"/api/chats/" + chat.ID + "/messages", `{"message":"Blocked","permission_mode":"fullAccess"}`},
+	} {
+		if w := apiRequest(a, "POST", target.path, target.body, cookie, csrf); w.Code != 400 {
+			t.Fatal("unavailable full access was accepted", w.Code, w.Body.String())
+		}
+	}
+	w = apiRequest(a, "POST", path, `{"mode":"ask"}`, cookie, csrf)
+	var restored chatmodel.PermissionCatalog
+	if w.Code != 200 || json.Unmarshal(w.Body.Bytes(), &restored) != nil || restored.Current != "ask" || restored.Sandbox != "workspace-write" || restored.Policy != "on-request" {
+		t.Fatal("switching back did not restore sandbox metadata", w.Code, w.Body.String())
+	}
+}
+
 func (r *preferencePermissionRunner) PermissionModes(ctx context.Context, backend chatmodel.Backend, directory string) (chatmodel.PermissionCatalog, error) {
 	r.probes++
 	if r.fail {

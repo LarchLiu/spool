@@ -26,6 +26,7 @@ final class NativeText {
             case "Allow app installs in system settings, then return.": value = "请在系统设置中允许安装应用，然后返回。"; break;
             case "Allow automatic connection switching": value = "允许自动切换连接"; break;
             case "Allow device MCP tools": value = "允许设备 MCP 工具"; break;
+            case "Allow file and network access outside the project without approval.": value = "允许访问项目外的文件和网络，无需审批。"; break;
             case "Allow file edits; ask for other protected operations.": value = "自动允许文件编辑，其他受保护操作仍需确认。"; break;
             case "Allow for this session": value = "本会话内允许"; break;
             case "Allow for this turn": value = "本轮内允许"; break;
@@ -201,6 +202,7 @@ final class NativeText {
             case "Edited files": value = "编辑文件"; break;
             case "Edited {path}": value = "编辑 {path}"; break;
             case "Enable bypass": value = "确认跳过检查"; break;
+            case "Enable full access": value = "启用完全访问"; break;
             case "Enable full screen": value = "启用全屏"; break;
             case "Enlarge diagram": value = "放大查看"; break;
             case "Enter a chat title of 1–200 characters": value = "请输入 1–200 个字符的对话标题"; break;
@@ -228,6 +230,8 @@ final class NativeText {
             case "Follow system": value = "跟随系统"; break;
             case "Form values (JSON)": value = "表单内容（JSON）"; break;
             case "From {plugin}": value = "来自 {plugin}"; break;
+            case "Full access": value = "完全访问"; break;
+            case "Full access · no sandbox or approval prompts": value = "完全访问 · 无沙箱限制或审批提示"; break;
             case "Generated from your name": value = "根据你的名字自动生成"; break;
             case "Generated on your device. Your name is never sent to DiceBear.": value = "在你的设备上生成，不会向 DiceBear 发送你的名字。"; break;
             case "Git diff": value = "Git 差异"; break;
@@ -643,6 +647,7 @@ final class NativeText {
             case "Allow app installs in system settings, then return.": value = "システム設定でアプリのインストールを許可してから戻ってください。"; break;
             case "Allow automatic connection switching": value = "接続の自動切り替えを許可"; break;
             case "Allow device MCP tools": value = "デバイスの MCP ツールを許可"; break;
+            case "Allow file and network access outside the project without approval.": value = "承認なしでプロジェクト外のファイルとネットワークへのアクセスを許可します。"; break;
             case "Allow file edits; ask for other protected operations.": value = "ファイル編集を許可し、その他の保護された操作は確認します。"; break;
             case "Allow for this session": value = "このセッションで許可"; break;
             case "Allow for this turn": value = "このターンで許可"; break;
@@ -818,6 +823,7 @@ final class NativeText {
             case "Edited files": value = "ファイルを編集"; break;
             case "Edited {path}": value = "{path} を編集"; break;
             case "Enable bypass": value = "スキップを有効化"; break;
+            case "Enable full access": value = "フルアクセスを有効化"; break;
             case "Enable full screen": value = "全画面表示を有効化"; break;
             case "Enlarge diagram": value = "図を拡大表示"; break;
             case "Enter a chat title of 1–200 characters": value = "チャットのタイトルを1～200文字で入力してください"; break;
@@ -845,6 +851,8 @@ final class NativeText {
             case "Follow system": value = "システムに従う"; break;
             case "Form values (JSON)": value = "フォームの値（JSON）"; break;
             case "From {plugin}": value = "提供元: {plugin}"; break;
+            case "Full access": value = "フルアクセス"; break;
+            case "Full access · no sandbox or approval prompts": value = "フルアクセス · サンドボックス制限や承認プロンプトなし"; break;
             case "Generated from your name": value = "名前から自動生成"; break;
             case "Generated on your device. Your name is never sent to DiceBear.": value = "お使いのデバイス上で生成され、名前は DiceBear に送信されません。"; break;
             case "Git diff": value = "Git 差分"; break;

@@ -7,6 +7,44 @@ import (
 	chatmodel "spool/internal/model"
 )
 
+type codexPermissionSettings struct {
+	policy, sandbox, reviewer string
+}
+
+func codexPermissionMode(mode string) codexPermissionSettings {
+	settings := codexPermissionSettings{policy: "on-request", sandbox: "workspace-write", reviewer: "user"}
+	if mode == "auto" {
+		settings.reviewer = "auto_review"
+	} else if mode == "fullAccess" {
+		settings.policy, settings.sandbox = "never", "danger-full-access"
+	}
+	return settings
+}
+
+func (s codexPermissionSettings) sandboxPolicy(request AgentRequest) map[string]any {
+	if s.sandbox == "danger-full-access" {
+		return map[string]any{"type": "dangerFullAccess"}
+	}
+	if s.sandbox == "read-only" {
+		return map[string]any{"type": "readOnly"}
+	}
+	return map[string]any{"type": "workspaceWrite", "writableRoots": append([]string{request.WorkingDirectory}, request.WritableDirectories...), "networkAccess": false}
+}
+
+func (s codexPermissionSettings) validateApplied(response map[string]any) error {
+	policy, reviewer := stringValue(response["approvalPolicy"]), stringValue(response["approvalsReviewer"])
+	sandbox := nestedString(response, "sandbox", "type")
+	wantSandbox := stringValue(s.sandboxPolicy(AgentRequest{})["type"])
+	// Full access must be acknowledged explicitly. Older providers may omit
+	// settings for the existing managed modes, but must never silently downgrade
+	// a selection advertised as unrestricted.
+	if policy != "" && policy != s.policy || reviewer != "" && reviewer != s.reviewer || sandbox != "" && sandbox != wantSandbox ||
+		s.sandbox == "danger-full-access" && (policy == "" || sandbox == "") {
+		return fmt.Errorf("Codex did not apply the selected permission mode; no message was sent")
+	}
+	return nil
+}
+
 // Each checkbox refers to an unchanged value from the native request. Deny
 // entries accompany any selected filesystem grants, preserving exclusions.
 func codexPermissionApproval(params map[string]any) approvalProtocol {

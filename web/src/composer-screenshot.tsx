@@ -170,7 +170,7 @@ function NativeComposerScreenshot(props: ComposerScreenshotProps) {
         {busy ? (
           <LoaderCircle size={18} className="stop-spinner" />
         ) : (
-          <ScanLine size={20} />
+          <ScanLine size={18} />
         )}
       </a>
       <button

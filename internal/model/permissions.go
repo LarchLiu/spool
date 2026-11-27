@@ -34,7 +34,7 @@ func ValidatePermissionMode(backend Backend, mode string) error {
 	if mode == "" {
 		return nil
 	}
-	if backend == BackendCodex && (mode == "ask" || mode == "auto") {
+	if backend == BackendCodex && (mode == "ask" || mode == "auto" || mode == "fullAccess") {
 		return nil
 	}
 	if backend == BackendClaude {

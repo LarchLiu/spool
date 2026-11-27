@@ -47,6 +47,7 @@ final class NativePermissionMenu extends FrameLayout implements NativeMarkdownFl
             case "ask": return ui.t("Ask for approval");
             case "manual": return ui.t("Manual");
             case "auto": return ui.t(backend.equals("codex") ? "Approve for me" : "Auto");
+            case "fullAccess": return ui.t("Full access");
             case "acceptEdits": return ui.t("Accept edits");
             case "plan": return ui.t("Plan");
             case "dontAsk": return ui.t("Don't ask");
@@ -60,6 +61,7 @@ final class NativePermissionMenu extends FrameLayout implements NativeMarkdownFl
             case "ask": return ui.t("You approve requests outside the sandbox.");
             case "manual": return ui.t("Confirm operations that require permission.");
             case "auto": return ui.t("The agent reviews approval requests automatically.");
+            case "fullAccess": return ui.t("Allow file and network access outside the project without approval.");
             case "acceptEdits": return ui.t("Allow file edits; ask for other protected operations.");
             case "plan": return ui.t("Plan before making changes.");
             case "dontAsk": return ui.t("Deny operations that are not already permitted.");
@@ -74,6 +76,8 @@ final class NativePermissionMenu extends FrameLayout implements NativeMarkdownFl
     }
 
     void show(View anchor) { confirmBypass = false; render(); popover.show(anchor, true); }
+
+    private String unrestrictedMode() { return backend.equals("codex") ? "fullAccess" : "bypassPermissions"; }
 
     private TextView text(String value, int size, int color) {
         TextView view = ui.text(value, size, color);
@@ -108,7 +112,7 @@ final class NativePermissionMenu extends FrameLayout implements NativeMarkdownFl
             confirmation.inset(ui.dp(6), ui.dp(6), ui.dp(6), ui.dp(6));
             confirmation.setBackground(ui.shape(ui.errorBg, 8, ui.errorBorder));
             confirmation.setTag("confirmation");
-            TextView warning = text(description(ui, "bypassPermissions"), 11, ui.muted);
+            TextView warning = text(description(ui, unrestrictedMode()), 11, ui.muted);
             FrameLayout warningInset = new FrameLayout(ui.context); warningInset.setPadding(ui.dp(9), 0, ui.dp(9), 0);
             warningInset.addView(warning, new FrameLayout.LayoutParams(-1, -2));
             warning.setTag("warning"); confirmation.add(warningInset, ui.dp(7), ui.dp(7));
@@ -116,16 +120,16 @@ final class NativePermissionMenu extends FrameLayout implements NativeMarkdownFl
             actions.setPadding(ui.dp(4), ui.dp(4), ui.dp(4), ui.dp(4));
             TextView cancel = action(ui.t("Cancel"), false, () -> { confirmBypass = false; render(); });
             cancel.setTag("cancel"); actions.addView(cancel);
-            TextView enable = action(ui.t("Enable bypass"), true, () -> select("bypassPermissions"));
+            TextView enable = action(ui.t(backend.equals("codex") ? "Enable full access" : "Enable bypass"), true, () -> select(unrestrictedMode()));
             enable.setTag("enable");
             LinearLayout.LayoutParams params = new LinearLayout.LayoutParams(-2, -2); params.leftMargin = ui.dp(8);
             actions.addView(enable, params); confirmation.add(actions, 0, 0);
             flow.add(confirmation, ui.dp(8), 0);
-            if (Build.VERSION.SDK_INT >= 28) confirmation.setAccessibilityPaneTitle(ui.t("Bypass permissions"));
+            if (Build.VERSION.SDK_INT >= 28) confirmation.setAccessibilityPaneTitle(label(ui, backend, unrestrictedMode()));
             confirmation.setAccessibilityLiveRegion(ACCESSIBILITY_LIVE_REGION_POLITE);
         }
         if (backend.equals("codex")) {
-            TextView scope = text(ui.t("Project sandbox · network access requires approval"), 10, ui.muted);
+            TextView scope = text(ui.t(selected.equals("fullAccess") ? "Full access · no sandbox or approval prompts" : "Project sandbox · network access requires approval"), 10, ui.muted);
             ui.fixedLineHeight(scope, 1.5f);
             scope.setPadding(0, ui.dp(10), 0, 0);
             scope.setBackground(new android.graphics.drawable.Drawable() {
@@ -244,8 +248,8 @@ final class NativePermissionMenu extends FrameLayout implements NativeMarkdownFl
         private float height, titleHeight;
         Option(String id, String description, boolean available) {
             super(ui.context); this.id = id;
-            title = text(label(ui, backend, id), 12, id.equals("bypassPermissions") ? ui.primary : ui.text);
-            ui.typography(title, 12, id.equals("bypassPermissions") ? ui.primary : ui.text, 500);
+            title = text(label(ui, backend, id), 12, id.equals(unrestrictedMode()) ? ui.primary : ui.text);
+            ui.typography(title, 12, id.equals(unrestrictedMode()) ? ui.primary : ui.text, 500);
             ui.normalFallbackLineSpacing(title);
             detail = text(description, 10, ui.muted); ui.fixedLineHeight(detail, 1.5f);
             addView(title); addView(detail);
@@ -257,7 +261,7 @@ final class NativePermissionMenu extends FrameLayout implements NativeMarkdownFl
             ui.buttonKeys(this);
             setOnClickListener(view -> {
                 if (!isEnabled()) return;
-                if (id.equals("bypassPermissions") && !selected.equals(id)) {
+                if (id.equals(unrestrictedMode()) && !selected.equals(id)) {
                     if (!confirmBypass) { confirmBypass = true; render(); }
                 } else select(id);
             });

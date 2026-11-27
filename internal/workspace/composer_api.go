@@ -161,6 +161,9 @@ func (a *App) permissionCatalog(ctx context.Context, chat chatmodel.Session) (ca
 		// must ask the user to choose an available mode, as for saved chat modes.
 		catalog.Default, catalog.Current = mode, mode
 	}
+	if chat.Backend == chatmodel.BackendCodex && catalog.Current == "fullAccess" {
+		catalog.Policy, catalog.Sandbox = "never", "danger-full-access"
+	}
 	return catalog, nil
 }
 
@@ -222,6 +225,12 @@ func (a *App) permissionResponse(w http.ResponseWriter, r *http.Request, user st
 			return
 		}
 		catalog.Default, catalog.Current = input.Mode, input.Mode
+		if chat.Backend == chatmodel.BackendCodex {
+			catalog.Policy, catalog.Sandbox = "on-request", "workspace-write"
+			if input.Mode == "fullAccess" {
+				catalog.Policy, catalog.Sandbox = "never", "danger-full-access"
+			}
+		}
 	}
 	apiJSON(w, 200, catalog)
 }

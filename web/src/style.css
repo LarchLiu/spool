@@ -2781,6 +2781,7 @@ a.attachment-open {
 }
 .composer {
   position: relative;
+  container: composer / inline-size;
   max-width: 900px;
   margin: auto;
   border: 1px solid var(--border-strong);
@@ -3508,6 +3509,12 @@ a.attachment-open {
   display: block;
   flex-shrink: 0;
 }
+@container composer (max-width: 480px) {
+  .permission-summary > span,
+  .picker-summary > span {
+    display: none;
+  }
+}
 .model-popover {
   position: absolute;
   right: 0;
@@ -4063,9 +4070,6 @@ a.attachment-open {
   }
 }
 @media (max-width: 400px) {
-  .permission-summary > span {
-    display: none;
-  }
   .composer-actions {
     max-width: 72%;
   }

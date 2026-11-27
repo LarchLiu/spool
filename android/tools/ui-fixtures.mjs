@@ -103,13 +103,13 @@ export const chatStateCases=[
 ];
 const permissionModes=(...ids)=>ids.map(id=>({id,available:id!=='dontAsk',...(id==='dontAsk'?{reason:'Permission discovery is unavailable'}:{})}));
 export const permissionCases=[
- {id:'codex',backend:'codex',selected:'ask',modes:permissionModes('ask','auto','dontAsk','bypassPermissions')},
+ {id:'codex',backend:'codex',selected:'ask',modes:permissionModes('ask','auto','dontAsk','fullAccess')},
  {id:'claude',backend:'claude',selected:'acceptEdits',modes:permissionModes('acceptEdits','plan','manual','bypassPermissions')},
  {id:'loading',backend:'codex',selected:'ask',loading:true},
  {id:'failed',backend:'codex',selected:'ask',failed:true},
  {id:'confirm',backend:'claude',selected:'acceptEdits',confirm:true,modes:permissionModes('acceptEdits','bypassPermissions')},
- {id:'bypass',backend:'codex',selected:'bypassPermissions',modes:permissionModes('ask','bypassPermissions')},
- {id:'chinese',backend:'codex',selected:'auto',locale:'zh-CN',confirm:true,modes:permissionModes('ask','auto','bypassPermissions')},
+ {id:'full-access',backend:'codex',selected:'fullAccess',modes:permissionModes('ask','fullAccess')},
+ {id:'chinese',backend:'codex',selected:'auto',locale:'zh-CN',confirm:true,modes:permissionModes('ask','auto','fullAccess')},
  {id:'japanese',backend:'claude',selected:'plan',locale:'ja',confirm:true,modes:permissionModes('plan','bypassPermissions')},
 ];
 export const markdownCases=[

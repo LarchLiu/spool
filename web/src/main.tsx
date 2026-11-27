@@ -3102,6 +3102,7 @@ function App() {
                       className="picker-summary"
                       type="button"
                       aria-label={t("Choose agent and model")}
+                      title={`${currentModel?.displayName || composerSelection.model || t("CLI default")}${composerSelection.effort ? ` · ${effortLabel(composerSelection.effort)}` : ""}`}
                       aria-expanded={picker}
                       disabled={
                         !composerWritable ||

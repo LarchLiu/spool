@@ -4014,7 +4014,7 @@
           "reason": "Permission discovery is unavailable"
         },
         {
-          "id": "bypassPermissions",
+          "id": "fullAccess",
           "available": true
         }
       ]
@@ -4071,16 +4071,16 @@
       ]
     },
     {
-      "id": "bypass",
+      "id": "full-access",
       "backend": "codex",
-      "selected": "bypassPermissions",
+      "selected": "fullAccess",
       "modes": [
         {
           "id": "ask",
           "available": true
         },
         {
-          "id": "bypassPermissions",
+          "id": "fullAccess",
           "available": true
         }
       ]
@@ -4101,7 +4101,7 @@
           "available": true
         },
         {
-          "id": "bypassPermissions",
+          "id": "fullAccess",
           "available": true
         }
       ]

@@ -64,6 +64,18 @@ Without a saved choice, the existing provider defaults and chat modes apply.
 Permission discovery still runs normally: a saved mode that becomes unavailable
 remains selected and blocks sending until the user chooses an available mode.
 
+Codex offers **Ask for approval**, **Approve for me**, and **Full access** when
+the CLI and administrator policy permit them. The first two use the project
+sandbox and `on-request` approval policy; they differ in whether the user or
+Codex's automatic reviewer handles approval requests. Full access uses
+`danger-full-access` with `never` approval policy and allows file and network
+access outside the project under the Codex process's operating-system permissions.
+Selecting Full access in the composer requires confirmation. Discovery never
+selects it as a fallback default. The choice applies to the next turn, including
+resumed chats and native reviews; switching back restores the project sandbox.
+When starting or resuming a native thread, Spool checks the returned permissions
+before sending a message and reports an error if Full access was not acknowledged.
+
 ## Permission discovery failures
 
 Spool checks the selected CLI's permissions in the chat's working directory

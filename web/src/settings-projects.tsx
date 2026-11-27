@@ -654,7 +654,7 @@ export function ProjectsPage({ data, run, t }: PageProps) {
                   options={[
                     "",
                     ...(issue.backend === "codex"
-                      ? ["ask", "auto"]
+                      ? ["ask", "auto", "fullAccess"]
                       : [
                           "manual",
                           "auto",
@@ -663,7 +663,13 @@ export function ProjectsPage({ data, run, t }: PageProps) {
                           "dontAsk",
                           "bypassPermissions",
                         ]),
-                  ].map((value) => ({ value, label: value || t("Default") }))}
+                  ].map((value) => ({
+                    value,
+                    label:
+                      value === "fullAccess"
+                        ? t("Full access")
+                        : value || t("Default"),
+                  }))}
                 />
               </Row>
             </>
