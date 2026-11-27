@@ -84,8 +84,9 @@ try {
     ["chromium", chromium, { channel: "chrome" }],
     ["webkit", webkit, {}],
   ]) {
-    for (const desktop of [false, true]) {
-      const surface = `${engine}-${desktop ? "desktop" : "web"}`;
+    for (const platform of ["web", "darwin", "win32", "linux"]) {
+      const desktop = platform !== "web";
+      const surface = `${engine}-${desktop ? `desktop-${platform}` : "web"}`;
       browser = await type.launchPersistentContext(join(scratch, surface), {
         ...launch,
         headless: true,
@@ -97,14 +98,14 @@ try {
       const errors = [],
         uploads = [];
       page.on("pageerror", (error) => errors.push(String(error)));
-      await page.addInitScript((desktop) => {
+      await page.addInitScript((platform) => {
         localStorage.setItem(
           "spool.ui-preferences.v1",
           JSON.stringify({ language: "en", theme: "light" }),
         );
-        if (desktop) {
+        if (platform !== "web") {
           window.spoolDesktop = true;
-          window.mygo = { platform: "darwin" };
+          window.mygo = { platform };
         }
         window.WebSocket = class extends EventTarget {
           readyState = 0;
@@ -113,7 +114,7 @@ try {
             this.readyState = 3;
           }
         };
-      }, desktop);
+      }, platform);
       const chat = (id, writable = true) => ({
         id,
         title: id,
@@ -256,6 +257,175 @@ try {
       async function clearFiles() {
         while (await composer.locator(".attachment-remove").count())
           await composer.locator(".attachment-remove").first().click();
+      }
+      const screenshot = page.getByRole("button", {
+        name: "Take screenshot",
+        exact: true,
+      });
+      const screenshotRequest = async (show = false) => {
+        if (show) {
+          await page
+            .getByRole("button", { name: "Screenshot options", exact: true })
+            .click();
+        }
+        const before = screenshotRequests.length;
+        const navigation = page.waitForRequest("**/__desktop/screenshot?*");
+        await (
+          show
+            ? page.getByRole("link", { name: "Show Spool", exact: true })
+            : screenshot
+        ).click({ delay: 120 });
+        const request = await navigation;
+        assert.equal(
+          screenshotRequests.length,
+          before + 1,
+          "One click immediately starts exactly one capture",
+        );
+        return Object.fromEntries(new URL(request.url()).searchParams);
+      };
+      const screenshotRequests = [];
+      const screenshotReply = (detail) =>
+        page.evaluate((detail) => {
+          window.dispatchEvent(new CustomEvent("spool:screenshot", { detail }));
+        }, detail);
+      const waitComposerFocus = () =>
+        page.waitForFunction(
+          () =>
+            document.activeElement === document.querySelector("#chat-message"),
+        );
+      if (desktop) {
+        // Observe actual browser navigation, as the native WebView does. A
+        // click handler alone misses links removed before their default action.
+        await page.route("**/__desktop/screenshot?*", async (route) => {
+          screenshotRequests.push(
+            Object.fromEntries(new URL(route.request().url()).searchParams),
+          );
+          await route.fulfill({ status: 204 });
+        });
+        const defaultRequest = await screenshotRequest();
+        assert.equal(
+          defaultRequest.visibility,
+          "hide",
+          "The main icon always hides Spool before capturing",
+        );
+        await screenshotReply({ token: "unrelated-request" });
+        assert.equal(
+          await input.evaluate((element) => document.activeElement === element),
+          false,
+          "unrelated screenshot replies must not move focus",
+        );
+        await screenshotReply({ token: defaultRequest.token });
+        await waitComposerFocus();
+        const modeButton = page.getByRole("button", {
+          name: "Screenshot options",
+          exact: true,
+        });
+        await modeButton.click();
+        assert.equal(
+          screenshotRequests.length,
+          1,
+          "Opening options does not start a capture",
+        );
+        assert.equal(
+          await page
+            .getByRole("group", { name: "Screenshot options" })
+            .getByRole("link")
+            .count(),
+          1,
+        );
+        await page
+          .getByRole("link", { name: "Show Spool", exact: false })
+          .waitFor();
+        await page.keyboard.press("ArrowDown");
+        assert.match(
+          await page.evaluate(() => document.activeElement.textContent),
+          /Show Spool/,
+        );
+        await page.keyboard.press("Escape");
+        assert.equal(
+          await modeButton.evaluate(
+            (element) => element === document.activeElement,
+          ),
+          true,
+        );
+        await modeButton.click();
+        for (const theme of ["light", "dark"]) {
+          await page.evaluate((theme) => {
+            document.documentElement.dataset.theme = theme;
+          }, theme);
+          await page.screenshot({
+            path: join(output, `${surface}-screenshot-${theme}.png`),
+          });
+        }
+        await page.evaluate(() => {
+          document.documentElement.dataset.theme = "light";
+        });
+        await page.keyboard.press("Escape");
+        const request = await screenshotRequest(true);
+        assert.equal(request.visibility, "show");
+        assert.equal(await screenshot.isDisabled(), true);
+        await screenshotReply({
+          token: request.token,
+          files: [
+            {
+              name: "screenshot.png",
+              type: "image/png",
+              data: png,
+              modified: 123,
+            },
+          ],
+        });
+        await composer.locator(".attachment-card").waitFor();
+        await page.waitForFunction(
+          () => document.querySelector(".composer img")?.naturalWidth > 0,
+        );
+        await waitComposerFocus();
+        await page.keyboard.type(" after screenshot");
+        assert.equal(
+          await input.inputValue(),
+          "Keep this draft after screenshot",
+        );
+        await input.fill("Keep this draft");
+        assert.equal(await input.inputValue(), "Keep this draft");
+        await clearFiles();
+        const again = await screenshotRequest();
+        assert.equal(
+          again.visibility,
+          "hide",
+          "Show Spool is a one-shot action; the main icon still hides Spool",
+        );
+        await screenshotReply({ token: again.token });
+        await waitComposerFocus();
+        const cancel = await screenshotRequest(true);
+        assert.equal(cancel.visibility, "show");
+        await screenshotReply({ token: cancel.token });
+        await waitComposerFocus();
+        await page.waitForFunction(
+          () =>
+            document
+              .querySelector('[aria-label="Take screenshot"]')
+              .getAttribute("aria-disabled") !== "true",
+        );
+        assert.equal(await composer.locator(".attachment-card").count(), 0);
+        const failed = await screenshotRequest(true);
+        await screenshotReply({
+          token: failed.token,
+          error: "Could not read the screenshot",
+        });
+        await page
+          .getByRole("alert")
+          .filter({ hasText: "Could not read the screenshot" })
+          .waitFor();
+        await waitComposerFocus();
+        await page
+          .getByRole("button", { name: "Dismiss", exact: true })
+          .click();
+      } else {
+        assert.equal(
+          await screenshot.count(),
+          0,
+          "Browser/PWA must not show unsupported native capture",
+        );
       }
       const history = page.locator(".history"),
         sidebar = page.locator(".sidebar");
@@ -505,6 +675,9 @@ try {
         false,
         "Text and URL drops retain normal editor behavior",
       );
+      const lateScreenshot = desktop
+        ? await screenshotRequest(true)
+        : undefined;
       await page
         .locator(".nav-chat-open")
         .filter({ hasText: "Read-only chat" })
@@ -515,6 +688,20 @@ try {
           document.querySelector("#chat-message")?.placeholder === "Read-only",
       );
       assert.equal(await input.isDisabled(), true);
+      if (desktop) {
+        await screenshotReply({
+          token: lateScreenshot.token,
+          files: [
+            { name: "stale.png", type: "image/png", data: png, modified: 123 },
+          ],
+        });
+        assert.equal(await screenshot.isDisabled(), true);
+        assert.equal(
+          await composer.locator(".attachment-card").count(),
+          0,
+          "Late screenshots must not cross chats",
+        );
+      }
       if (desktop)
         assert.equal(
           await input.evaluate((element) => {
@@ -536,6 +723,9 @@ try {
       reports.push({
         surface,
         nativeDelivery: desktop,
+        screenshotComposer: desktop,
+        screenshotReturnFocus: desktop,
+        systemScreenshotPicker: false,
         pageHover: true,
         osDragGesture: false,
         multipartBytesPreserved: true,

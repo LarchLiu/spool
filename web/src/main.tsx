@@ -55,6 +55,7 @@ import { DesktopServerWelcome } from "./desktop-servers";
 import { DesktopWindowChrome } from "./desktop-window-chrome";
 import { LoginStory } from "./login-story";
 import { ComposerSendButton } from "./composer-send-button";
+import { ComposerScreenshot } from "./composer-screenshot";
 import { RemoteCalls, RemoteTargetChip, RemoteTargetMenu, useRemoteAgents } from "./remote-agents";
 import { mcpCommand, MCPChips, MCPMenu, useComposerMCP } from "./composer-mcp";
 import { DeliveryStatus, deliveryReceipt, type LocalDelivery } from "./message-delivery";
@@ -3062,6 +3063,14 @@ function App() {
                 >
                   <Plus size={20} />
                 </button>
+                <ComposerScreenshot
+                  enabled={composerWritable && !posting && !preparingFiles && !remote.target}
+                  context={JSON.stringify([user?.id, project, chatID, draftVersion])}
+                  onFiles={addFiles}
+                  onError={message => setError(t(message as MessageKey))}
+                  onComplete={() => document.getElementById("chat-message")?.focus({ preventScroll: true })}
+                  t={t}
+                />
                 {project && !remote.target && (
                   <PermissionPicker
                     backend={backend}

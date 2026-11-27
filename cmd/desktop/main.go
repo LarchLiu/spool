@@ -39,6 +39,10 @@ type panel struct {
 	chatStarting           bool
 	fileAccessPending      bool
 	attachmentDropPending  bool
+	screenshotCancel       context.CancelFunc
+	screenshotDone         <-chan struct{}
+	screenshotWindows      []*mygo.Window
+	screenshotEditor       *screenshotEditorSession
 	attachmentDragView     *mygo.WebView
 	attachmentDrag         desktopAttachmentDrag
 	settingsView           *mygo.WebView
@@ -126,6 +130,7 @@ func runDesktop() (runErr error) {
 	if os.Getenv("MYGO_GENERATE") != "" {
 		mygo.BindAs("DesktopSettings", &desktopSettings{})
 		mygo.BindAs("DesktopServers", &desktopServerSettings{})
+		mygo.BindAs("DesktopScreenshot", &desktopScreenshot{})
 		return mygo.App.Run()
 	}
 	development := mygo.IsDev()
@@ -256,12 +261,18 @@ func runDesktop() (runErr error) {
 	}
 	mygo.BindAs("DesktopSettings", &desktopSettings{panel: p})
 	mygo.BindAs("DesktopServers", &desktopServerSettings{panel: p})
+	mygo.BindAs("DesktopScreenshot", &desktopScreenshot{panel: p})
 	mygo.Theme.SetSource(mygo.ThemeSource(p.preferences.Theme))
 	p.startOnLaunch()
 	done := make(chan struct{})
 	smokeResult := make(chan error, 1)
 	var shutdownErr error
 	mygo.App.OnQuit(func() {
+		if p.screenshotCancel != nil {
+			p.closeScreenshotWindows()
+			p.screenshotCancel()
+			<-p.screenshotDone
+		}
 		if p.notificationEvents != nil {
 			p.notificationEvents.Close()
 		}
@@ -343,7 +354,7 @@ func runDesktop() (runErr error) {
 		})
 		mygo.App.OnSecondInstance(func([]string, string) { p.showMainWindow() })
 		mygo.App.OnActivate(func(visible bool) {
-			if !visible {
+			if !visible && p.screenshotCancel == nil {
 				p.showMainWindow()
 			}
 		})

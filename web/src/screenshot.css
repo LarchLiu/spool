@@ -1,0 +1,263 @@
+@import "./style.css";
+
+:root {
+  font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+  color: #fff;
+  background: #111;
+  color-scheme: dark;
+  --surface: #16191f;
+}
+* {
+  box-sizing: border-box;
+}
+html,
+body,
+#root {
+  margin: 0;
+  width: 100%;
+  height: 100%;
+  overflow: hidden;
+  user-select: none;
+}
+.capture-surface {
+  position: relative;
+  overflow: hidden;
+  cursor: crosshair;
+  touch-action: none;
+  outline: none;
+}
+.capture-background,
+.capture-shade {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  pointer-events: none;
+}
+.capture-background {
+  object-fit: fill;
+}
+.capture-shade {
+  background: #0006;
+}
+.capture-selection {
+  position: absolute;
+  border: 2px solid var(--color-primary);
+  pointer-events: none;
+  background-repeat: no-repeat;
+  background-origin: border-box;
+}
+.capture-selection.editable {
+  cursor: move;
+  pointer-events: auto;
+}
+.tool-rect .capture-selection.editable,
+.tool-line .capture-selection.editable,
+.tool-mosaic .capture-selection.editable {
+  cursor: crosshair;
+}
+.capture-preview {
+  position: absolute;
+  left: -2px;
+  top: -2px;
+  width: calc(100% + 4px);
+  height: calc(100% + 4px);
+  pointer-events: none;
+}
+.capture-selection::after {
+  content: "";
+  position: absolute;
+  inset: -2px;
+  border: 2px solid var(--color-primary);
+  pointer-events: none;
+}
+.capture-size {
+  position: absolute;
+  bottom: calc(100% + 6px);
+  left: -2px;
+  padding: 4px 8px;
+  border-radius: 5px;
+  font-size: 12px;
+  white-space: nowrap;
+  background: #15191fed;
+  pointer-events: none;
+}
+.capture-handle {
+  position: absolute;
+  width: 10px;
+  height: 10px;
+  background: #fff;
+  border: 1px solid var(--color-primary);
+  border-radius: 2px;
+  transform: translate(-50%, -50%);
+}
+.capture-edge {
+  position: absolute;
+}
+.edge-n,
+.edge-s {
+  left: 0;
+  right: 0;
+  height: 8px;
+  cursor: ns-resize;
+}
+.edge-n {
+  top: -4px;
+}
+.edge-s {
+  bottom: -4px;
+}
+.edge-e,
+.edge-w {
+  top: 0;
+  bottom: 0;
+  width: 8px;
+  cursor: ew-resize;
+}
+.edge-e {
+  right: -4px;
+}
+.edge-w {
+  left: -4px;
+}
+.handle-nw {
+  left: 0;
+  top: 0;
+  cursor: nwse-resize;
+}
+.handle-n {
+  left: 50%;
+  top: 0;
+  cursor: ns-resize;
+}
+.handle-ne {
+  left: 100%;
+  top: 0;
+  cursor: nesw-resize;
+}
+.handle-e {
+  left: 100%;
+  top: 50%;
+  cursor: ew-resize;
+}
+.handle-se {
+  left: 100%;
+  top: 100%;
+  cursor: nwse-resize;
+}
+.handle-s {
+  left: 50%;
+  top: 100%;
+  cursor: ns-resize;
+}
+.handle-sw {
+  left: 0;
+  top: 100%;
+  cursor: nesw-resize;
+}
+.handle-w {
+  left: 0;
+  top: 50%;
+  cursor: ew-resize;
+}
+.capture-toolbar {
+  position: absolute;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 6px;
+  width: 302px;
+  max-width: calc(100vw - 24px);
+  padding: 8px;
+  border: 1px solid #ffffff38;
+  border-radius: 12px;
+  background: #16191ff5;
+  box-shadow: 0 6px 24px #0005;
+  cursor: default;
+}
+.capture-toolbar > span {
+  font-size: 12px;
+  text-align: center;
+}
+.capture-toolbar-actions {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 4px;
+  flex-wrap: wrap;
+}
+.capture-tool {
+  position: relative;
+  display: inline-flex;
+}
+.capture-tooltip {
+  position: absolute;
+  z-index: 1;
+  bottom: calc(100% + 10px);
+  left: 50%;
+  transform: translateX(-50%);
+  padding: 5px 8px;
+  border: 1px solid #ffffff38;
+  border-radius: 6px;
+  background: #16191ff5;
+  box-shadow: 0 3px 12px #0005;
+  color: #fff;
+  font-size: 12px;
+  line-height: 18px;
+  white-space: nowrap;
+  pointer-events: none;
+  visibility: hidden;
+}
+.capture-tool:first-child .capture-tooltip {
+  left: 0;
+  transform: none;
+}
+.capture-tool:last-child .capture-tooltip {
+  left: auto;
+  right: 0;
+  transform: none;
+}
+.capture-toolbar[data-tooltip-side="below"] .capture-tooltip {
+  top: calc(100% + 10px);
+  bottom: auto;
+}
+.capture-tool:hover .capture-tooltip,
+.capture-tool > button:focus-visible + .capture-tooltip {
+  visibility: visible;
+}
+.capture-toolbar button {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-height: 30px;
+  min-width: 32px;
+  padding: 5px;
+  border: 0;
+  border-radius: 6px;
+  background: transparent;
+  color: #fff;
+  font: inherit;
+  font-size: 12px;
+  cursor: pointer;
+}
+.capture-toolbar button:hover {
+  background: #ffffff30;
+}
+.capture-toolbar button[aria-pressed="true"] {
+  background: var(--color-primary);
+  color: var(--color-on-primary);
+}
+.capture-error {
+  color: #ffb4ab;
+}
+.capture-toolbar button:focus-visible {
+  outline: 2px solid var(--color-primary);
+  outline-offset: 2px;
+}
+.capture-toolbar .capture-confirm {
+  color: var(--color-primary);
+}
+.capture-toolbar button:disabled {
+  opacity: 0.5;
+  cursor: default;
+}

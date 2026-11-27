@@ -37,6 +37,9 @@ window.mygo?.on("spool:attachment-drop", delivery => {
 window.mygo?.on("spool:attachment-drag", state => {
   window.spoolAttachmentDrop?.hover(state);
 });
+window.mygo?.on("spool:screenshot", result => {
+  window.dispatchEvent(new CustomEvent("spool:screenshot", {detail: result}));
+});
 window.mygo?.on("spool:download", result => {
   window.dispatchEvent(new CustomEvent("spool:download", {detail: result}));
 });

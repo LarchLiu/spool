@@ -25,6 +25,7 @@ export default defineConfig({
         desktop: "desktop.html",
         servers: "servers.html",
         remoteDesktop: "remote-desktop.html",
+        screenshot: "screenshot.html",
       },
     },
   },

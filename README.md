@@ -18,7 +18,7 @@ stay on that machine; install and sign in to Codex or Claude Code there before u
 
 - **Desktop, Web/PWA, and Android** — Continue the same projects and chats across devices; Desktop and Android support multiple servers.
 - **Codex and Claude Code** — Independent native sessions, model and reasoning selection, [agent slash commands](docs/agent-commands.md), streaming output, stop, and resume.
-- **Rich chat and files** — Markdown, code, diffs, tool activity, images, attachments, project files, Git worktrees, and [Word/Excel previews](docs/office-preview.md).
+- **Rich chat and files** — Markdown, code, diffs, tool activity, images, [screenshots](docs/screenshots.md), attachments, project files, Git worktrees, and [Word/Excel previews](docs/office-preview.md).
 - **Collaboration** — Project members, shared sessions, private messages, group chats, and online presence.
 - **Permissions and approvals** — Per-user and project permissions, session access, command/file approvals, and interactive questions.
 - **Automation** — Scheduled GitHub Issue processing in isolated worktrees, with pull requests for review.

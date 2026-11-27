@@ -279,6 +279,13 @@ func (p *panel) loadDesktopServerChat(id, address string) error {
 				})
 				return
 			}
+			if request, reserved, ok := screenshotNavigation(state.address, e.URL); reserved {
+				e.PreventDefault()
+				if ok && e.UserInitiated {
+					p.window.Update(func() { p.takeScreenshot(view, request) })
+				}
+				return
+			}
 			if chatReservedNavigation(state.address, e.URL, desktopRemoteDesktopPath) {
 				e.PreventDefault()
 				p.window.Update(func() { p.openRemoteDesktop(id, state) })

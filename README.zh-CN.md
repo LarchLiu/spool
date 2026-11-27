@@ -17,7 +17,7 @@ Spool 是面向个人和团队的本地 AI 编程工作区。通过 Desktop、We
 
 - **多端工作区**：Desktop、Web/PWA 和 Android 访问同一项目与聊天，Desktop 和 Android 支持连接多台服务器。
 - **Codex 与 Claude Code**：独立原生会话，支持模型与推理等级选择、[Agent 斜杠命令](docs/agent-commands.md)、流式输出、停止和恢复。
-- **聊天与文件**：Markdown、代码、Diff、工具活动、图片、附件、项目文件、Git worktree，以及 [Word/Excel 预览](docs/office-preview.md)。
+- **聊天与文件**：Markdown、代码、Diff、工具活动、图片、[截图](docs/screenshots.md)、附件、项目文件、Git worktree，以及 [Word/Excel 预览](docs/office-preview.md)。
 - **多人协作**：项目成员、共享会话、私聊、群聊和在线状态。
 - **权限与审批**：用户与项目权限、会话访问控制、命令和文件审批，以及交互式提问。
 - **自动化**：定时处理 GitHub Issues，在隔离 worktree 中执行任务并创建 PR 供审阅。
