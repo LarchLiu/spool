@@ -438,7 +438,7 @@ try {
           });
         };
         window.spoolDesktop = true;
-        window.mygo = { platform: "darwin", locale: "en", on: () => () => {} };
+        window.mygo = { platform: "darwin", locale: "en", on: () => () => {}, callWith(method, args, { signal } = {}) { signal?.throwIfAborted(); return this.call(method, ...args); } };
         const chrome = () => {
           document.documentElement.dataset.desktopPlatform = "darwin";
         };

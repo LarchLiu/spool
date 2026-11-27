@@ -89,14 +89,16 @@ func (p *panel) openRemoteDesktop(id string, chat *desktopServerChat) {
 		return
 	}
 	address += "?" + url.Values{"server": {p.remoteDesktopServerName(id)}}.Encode()
+	pageOptions := desktopPageOptions(desktopWindowPreload + `
+window.mygo?.on("spool:remote-desktop-server", name => {
+  window.dispatchEvent(new CustomEvent("spool:remote-desktop-server", {detail: name}));
+});`)
+	pageOptions.Session = chat.session
 	window := mygo.NewWindow(mygo.WindowOptions{
 		Title: p.remoteDesktopTitle(id),
 		Width: 1280, Height: 850, MinWidth: 480, MinHeight: 320,
 		BackgroundColor: "light-dark(#ffffff, #242423)",
-		Page: desktopPageOptions(desktopWindowPreload + `
-window.mygo?.on("spool:remote-desktop-server", name => {
-  window.dispatchEvent(new CustomEvent("spool:remote-desktop-server", {detail: name}));
-});`),
+		Page:            pageOptions,
 	})
 	chat.remoteDesktop = window
 	window.OnClosed(func() {

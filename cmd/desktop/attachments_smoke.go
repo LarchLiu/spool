@@ -10,6 +10,7 @@ import (
 	"path/filepath"
 	"runtime"
 	"strings"
+	"sync"
 	"time"
 
 	"github.com/egoist/mygo"
@@ -23,26 +24,49 @@ func (p *panel) smokeAttachmentsOnly(report string, result chan<- error) {
 	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
 	defer cancel()
 	err := p.probeAttachmentDrop(ctx, report)
-	if err == nil && runtime.GOOS == "darwin" {
+	if err != nil {
+		err = fmt.Errorf("attachment drop: %w", err)
+	} else if runtime.GOOS == "darwin" {
 		err = p.probeScreenshotSelection(ctx, report)
+		if err != nil {
+			err = fmt.Errorf("screenshot selection: %w", err)
+		}
 	}
-	if err == nil {
-		body, _ := json.Marshal(map[string]any{
-			"scope": "attachments", "native": true, "target": runtime.GOOS + "-" + runtime.GOARCH,
-			"dom_drop": true, "native_file_delivery": true, "duplicate_suppressed": true,
-			"page_hover": true, "native_hover_bridge": true, "hover_exit": true,
-			"image_preview": true, "submission_bytes": true, "os_drag_gesture": false,
-			"screenshot_surface": runtime.GOOS == "darwin", "screenshot_navigation": runtime.GOOS == "darwin",
-			"system_screen_capture":        false,
-			"screenshot_visibility":        runtime.GOOS == "darwin",
-			"screenshot_native_mouse":      runtime.GOOS == "darwin",
-			"screenshot_display_alignment": runtime.GOOS == "darwin",
-			"screenshot_edited_export":     runtime.GOOS == "darwin",
-			"screenshot_export_authority":  runtime.GOOS == "darwin",
+	var finished sync.Once
+	finish := func(err error) {
+		finished.Do(func() {
+			if err != nil {
+				result <- err
+				return
+			}
+			body, _ := json.Marshal(map[string]any{
+				"scope": "attachments", "native": true, "target": runtime.GOOS + "-" + runtime.GOARCH,
+				"dom_drop": true, "native_file_delivery": true, "duplicate_suppressed": true,
+				"page_hover": true, "native_hover_bridge": true, "hover_exit": true,
+				"image_preview": true, "submission_bytes": true, "os_drag_gesture": false,
+				"screenshot_surface": runtime.GOOS == "darwin", "screenshot_navigation": runtime.GOOS == "darwin",
+				"system_screen_capture":        false,
+				"screenshot_visibility":        runtime.GOOS == "darwin",
+				"screenshot_native_mouse":      runtime.GOOS == "darwin",
+				"screenshot_display_alignment": runtime.GOOS == "darwin",
+				"screenshot_edited_export":     runtime.GOOS == "darwin",
+				"screenshot_export_authority":  runtime.GOOS == "darwin",
+				"screenshot_permission_quit":   runtime.GOOS == "darwin",
+			})
+			err = os.WriteFile(report, body, 0o600)
+			result <- err
 		})
-		err = os.WriteFile(report, body, 0o600)
 	}
-	result <- err
+	if err == nil && runtime.GOOS == "darwin" {
+		// The successful result is emitted from OnQuit, after cancellation has
+		// allowed the permission worker's native cleanup to finish on the UI thread.
+		err = p.prepareScreenshotPermissionQuitProbe(ctx, finish)
+		if err == nil {
+			mygo.App.Quit()
+			return
+		}
+	}
+	finish(err)
 	mygo.App.Quit()
 }
 

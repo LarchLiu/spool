@@ -277,7 +277,12 @@ export type SettingsCommand =
 
 type NativeRuntime = {
   call: <T>(method: string, ...args: unknown[]) => Promise<T>;
-  on: (event: string, listener: (value: string) => void) => () => void;
+  callWith?: <T>(
+    method: string,
+    args: unknown[],
+    options: { signal?: AbortSignal },
+  ) => Promise<T>;
+  on: (event: string, listener: (value: unknown) => void) => () => void;
 };
 function runtime(surface: unknown = globalThis): NativeRuntime | undefined {
   if (typeof surface !== "object" || !surface || !("mygo" in surface)) return;
@@ -295,34 +300,47 @@ function runtime(surface: unknown = globalThis): NativeRuntime | undefined {
 export function hasSettingsBridge(surface: unknown = globalThis) {
   return !!runtime(surface);
 }
+type SettingsMethod =
+  | "Action"
+  | "Snapshot"
+  | "Execute"
+  | "ChoosePath"
+  | "ReleaseNotes"
+  | "TSNetLogin"
+  | "TSNetRegister"
+  | "RelayPairing"
+  | "FederationTrust"
+  | "PreviewFederationTrust"
+  | "SubmitFederationTrust"
+  | "ApproveFederationTrust"
+  | "UpdateFederationTrustReturnRoute"
+  | "SetFederationTrustProjects"
+  | "SetFederationTrustUsers"
+  | "RelayDevices"
+  | "DecideRelayDevice"
+  | "RevokeRelayDevice"
+  | "CancelRelayPairing"
+  | "AddressQRCode"
+  | "CancelWebProxyDetection"
+  | "SummarizeDescriptions"
+  | "CancelDescriptionSummary"
+  | "RegisterRelay";
+
 export function settingsCall<T>(
-  method:
-    | "Action"
-    | "Snapshot"
-    | "Execute"
-    | "ChoosePath"
-    | "ReleaseNotes"
-    | "TSNetLogin"
-    | "TSNetRegister"
-    | "RelayPairing"
-    | "FederationTrust"
-    | "PreviewFederationTrust"
-    | "SubmitFederationTrust"
-    | "ApproveFederationTrust"
-    | "UpdateFederationTrustReturnRoute"
-    | "SetFederationTrustProjects"
-    | "SetFederationTrustUsers"
-    | "RelayDevices"
-    | "DecideRelayDevice"
-    | "RevokeRelayDevice"
-    | "CancelRelayPairing"
-    | "AddressQRCode"
-    | "CancelWebProxyDetection"
-    | "SummarizeDescriptions"
-    | "CancelDescriptionSummary"
-    | "RegisterRelay",
+  method: SettingsMethod,
   ...args: unknown[]
 ): Promise<T> {
+  return settingsCallWith<T>({}, method, ...args);
+}
+
+// Use cancellation for read-only work; commands that commit a change retain
+// their result even when the page stops waiting for it.
+export function settingsCallWith<T>(
+  options: { signal?: AbortSignal },
+  method: SettingsMethod,
+  ...args: unknown[]
+): Promise<T> {
+  if (options.signal?.aborted) return Promise.reject(options.signal.reason);
   const bridge = runtime();
   if (!bridge)
     return Promise.reject(
@@ -330,6 +348,13 @@ export function settingsCall<T>(
         "Desktop settings are only available in the Spool desktop app.",
       ),
     );
+  if (options.signal) {
+    if (!bridge.callWith)
+      return Promise.reject(
+        new Error("This desktop runtime does not support canceling calls."),
+      );
+    return bridge.callWith<T>(`DesktopSettings.${method}`, args, options);
+  }
   return bridge.call<T>(`DesktopSettings.${method}`, ...args);
 }
 export function subscribeSettingsSection(
@@ -340,6 +365,15 @@ export function subscribeSettingsSection(
       if (settingsSections.includes(value as SettingsSection))
         listener(value as SettingsSection);
     }) ?? (() => {})
+  );
+}
+export function subscribeSettingsVisibility(
+  listener: (visible: boolean) => void,
+) {
+  return (
+    runtime()?.on("spool:settings-visible", (value) =>
+      listener(value === true),
+    ) ?? (() => {})
   );
 }
 export function newPerson(): PersonDraft {

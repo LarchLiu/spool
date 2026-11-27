@@ -143,6 +143,10 @@ func (p *panel) loadDesktopServerChat(id, address string) error {
 			return fmt.Errorf("Desktop chat requires a system WebView. Install WebView2 (Windows) or WebKitGTK (Linux), or use Open in Browser.")
 		}
 		options := chatWebViewOptions()
+		server, _ := p.servers.find(id)
+		state.session = p.desktopServerSession(server)
+		state.sessionReady = state.session == mygo.DefaultSession()
+		options.Page.Session = state.session
 		tabs, _ := json.Marshal(p.desktopServerTabsFor(id))
 		options.Page.PreloadScript += "\nwindow.spoolServers = " + string(tabs) + ";"
 		view, err := p.window.NewWebView(options)
@@ -417,6 +421,10 @@ func (p *panel) loadDesktopServerChat(id, address string) error {
 			p.setDesktopNotificationFocused(p.desktopNotificationFocused())
 		}
 		p.recordDesktopServerState(id, "connecting")
+		if !state.sessionReady {
+			p.prepareDesktopChatSession(id, state)
+			return nil
+		}
 		if err := state.view.Page().LoadURL(address); err != nil {
 			if p.chatView == state.view {
 				p.chatFailed = true
@@ -460,12 +468,18 @@ func (p *panel) chatContent(c *ui.Context) {
 
 func (p *panel) selectTab(tab string) {
 	p.message = ""
+	if p.tab == "Chat" && tab != "Chat" && p.screenshotCancel != nil {
+		p.screenshotCancel()
+	}
 	if p.tab == "Service" && tab != p.tab {
 		p.flushServiceSetting()
 	}
 	p.tab = tab
 	p.setDesktopNotificationFocused(p.desktopNotificationFocused())
 	if p.window != nil {
+		if p.settingsView != nil {
+			_ = settingsVisibility.EmitPage(p.settingsView.Page(), tab != "Chat")
+		}
 		if tab != "Chat" && p.settingsView != nil && !p.settingsFailed {
 			_ = settingsSection.EmitPage(p.settingsView.Page(), tab)
 		}

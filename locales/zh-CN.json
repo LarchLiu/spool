@@ -1468,6 +1468,7 @@
   "A screenshot is already in progress": "已有截图正在进行",
   "Could not read the screenshot": "无法读取截图",
   "The screenshot timed out. Try again.": "截图超时，请重试。",
+  "Screen recording permission is required. Allow Spool in System Settings, then restart Spool and try again.": "需要屏幕录制权限。请在系统设置中允许 Spool，然后重启 Spool 后重试。",
   "Click a window · Drag to select an area": "单击截取窗口 · 拖动框选区域",
   "Drag edges or corners to resize": "拖动四边或四角调整大小",
   "Select screenshot": "选择截图",

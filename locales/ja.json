@@ -1468,6 +1468,7 @@
   "A screenshot is already in progress": "すでに撮影中です",
   "Could not read the screenshot": "スクリーンショットを読み込めませんでした",
   "The screenshot timed out. Try again.": "撮影がタイムアウトしました。もう一度お試しください。",
+  "Screen recording permission is required. Allow Spool in System Settings, then restart Spool and try again.": "画面収録の権限が必要です。システム設定で Spool を許可してから、Spool を再起動してお試しください。",
   "Click a window · Drag to select an area": "クリックでウィンドウ撮影 · ドラッグで範囲選択",
   "Drag edges or corners to resize": "辺や角をドラッグしてサイズ変更",
   "Select screenshot": "スクリーンショットを選択",

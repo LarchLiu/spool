@@ -11,6 +11,7 @@ import { ConnectionControl } from "./connection-control";
 import { readPairingQRCode } from "./pairing-qr";
 import {
   serverDialogCall,
+  serverDialogCallWith,
   serverDialogInitialSnapshot,
   type ConnectionMode,
   type DesktopServerProfile,
@@ -86,6 +87,7 @@ export function ServerDialog() {
   const operation = useRef(false);
   const active = useRef(true);
   const viewEpoch = useRef(0);
+  const pollAbort = useRef<AbortController | undefined>(undefined);
   const form = useRef<HTMLFormElement>(null);
   const content = useRef<HTMLDivElement>(null);
   const pairingImage = useRef<HTMLInputElement>(null);
@@ -104,6 +106,7 @@ export function ServerDialog() {
   saveProfile.current = async (value) => {
     const epoch = viewEpoch.current;
     operation.current = true;
+    pollAbort.current?.abort();
     setSaving(true);
     setSaved(false);
     setError("");
@@ -168,7 +171,9 @@ export function ServerDialog() {
     let initial = !initialSnapshot.current;
     const receive = (event: Event) => {
       const next = (event as CustomEvent<ServerDialogSnapshot>).detail;
+      active.current = true;
       viewEpoch.current++;
+      pollAbort.current?.abort();
       operation.current = false;
       initial = false;
       acceptSnapshot(next);
@@ -185,6 +190,17 @@ export function ServerDialog() {
       document.querySelector(".server-dialog-shell")?.scrollTo(0, 0);
     };
     window.addEventListener("spool:server-dialog", receive);
+    const hidden = (event: Event) => {
+      if ((event as CustomEvent<boolean>).detail === false) {
+        active.current = false;
+        pollAbort.current?.abort();
+      }
+    };
+    window.addEventListener("spool:server-dialog-visible", hidden);
+    const pageVisibility = () => {
+      if (document.hidden) pollAbort.current?.abort();
+    };
+    document.addEventListener("visibilitychange", pageVisibility);
     const escape = (event: globalThis.KeyboardEvent) => {
       if (event.key === "Escape" && !event.isComposing) {
         event.preventDefault();
@@ -193,11 +209,22 @@ export function ServerDialog() {
     };
     window.addEventListener("keydown", escape);
     const refresh = async () => {
-      if (operation.current || document.hidden) return;
+      if (!active.current || operation.current || document.hidden) return;
       const epoch = viewEpoch.current;
+      pollAbort.current?.abort();
+      const abort = new AbortController();
+      pollAbort.current = abort;
       try {
-        const next = await serverDialogCall<ServerDialogSnapshot>("Snapshot");
-        if (!active.current || operation.current || epoch !== viewEpoch.current)
+        const next = await serverDialogCallWith<ServerDialogSnapshot>(
+          { signal: abort.signal },
+          "Snapshot",
+        );
+        if (
+          abort.signal.aborted ||
+          !active.current ||
+          operation.current ||
+          epoch !== viewEpoch.current
+        )
           return;
         acceptSnapshot(next);
         if (initial) {
@@ -206,16 +233,25 @@ export function ServerDialog() {
           initial = false;
         }
       } catch (e) {
-        if (active.current && epoch === viewEpoch.current)
+        if (
+          !abort.signal.aborted &&
+          active.current &&
+          epoch === viewEpoch.current
+        )
           setError(String(e instanceof Error ? e.message : e));
+      } finally {
+        if (pollAbort.current === abort) pollAbort.current = undefined;
       }
     };
     if (initial) void refresh();
     const timer = setInterval(() => void refresh(), 3000);
     return () => {
       active.current = false;
+      pollAbort.current?.abort();
       clearInterval(timer);
       window.removeEventListener("spool:server-dialog", receive);
+      window.removeEventListener("spool:server-dialog-visible", hidden);
+      document.removeEventListener("visibilitychange", pageVisibility);
       window.removeEventListener("keydown", escape);
     };
   }, []);

@@ -1,5 +1,7 @@
 # 部署与远程访问
 
+桌面自动更新的签名验证、版本衔接和发布约束见[桌面自动更新](desktop-updates.zh-CN.md)。
+
 [English](deployment.md)
 
 本文介绍安装、服务配置、Web/PWA、Tailscale 和 voxl 远程桌面。使用 `./build/`

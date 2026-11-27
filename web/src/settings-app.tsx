@@ -20,8 +20,10 @@ import { usePresentation } from "./use-presentation";
 import {
   hasSettingsBridge,
   settingsCall,
+  settingsCallWith,
   settingsSections,
   subscribeSettingsSection,
+  subscribeSettingsVisibility,
   type SettingsSection,
   type SettingsSnapshot,
 } from "./settings-client";
@@ -128,14 +130,23 @@ export function SettingsApp() {
     return shared;
   }, []);
   const pollRequest = useRef(0);
+  const pollAbort = useRef<AbortController | undefined>(undefined);
+  const visible = useRef(true);
   const refresh = useCallback(
     async (initial = false) => {
       const generation = revision.current;
       const request = ++pollRequest.current;
+      pollAbort.current?.abort();
       if (operation.current) return;
+      const abort = new AbortController();
+      pollAbort.current = abort;
       try {
-        const next = await settingsCall<SettingsSnapshot>("Snapshot");
+        const next = await settingsCallWith<SettingsSnapshot>(
+          { signal: abort.signal },
+          "Snapshot",
+        );
         if (
+          abort.signal.aborted ||
           operation.current ||
           generation !== revision.current ||
           request !== pollRequest.current
@@ -148,7 +159,10 @@ export function SettingsApp() {
         )
           setSection(next.section as SettingsSection);
       } catch (e) {
-        if (initial) setError(String(e instanceof Error ? e.message : e));
+        if (initial && !abort.signal.aborted)
+          setError(String(e instanceof Error ? e.message : e));
+      } finally {
+        if (pollAbort.current === abort) pollAbort.current = undefined;
       }
     },
     [acceptSnapshot],
@@ -159,7 +173,19 @@ export function SettingsApp() {
   useEffect(() => {
     if (!available) return;
     void refresh(true);
-    const timer = setInterval(() => void refresh(), 3000);
+    const timer = setInterval(() => {
+      if (visible.current && !document.hidden) void refresh();
+    }, 3000);
+    const visibility = subscribeSettingsVisibility((next) => {
+      visible.current = next;
+      if (next) void refresh();
+      else pollAbort.current?.abort();
+    });
+    const pageVisibility = () => {
+      if (document.hidden) pollAbort.current?.abort();
+      else if (visible.current) void refresh();
+    };
+    document.addEventListener("visibilitychange", pageVisibility);
     const unsubscribe = subscribeSettingsSection((next) => {
       setSection(next);
       setSaved(false);
@@ -167,7 +193,11 @@ export function SettingsApp() {
     });
     return () => {
       clearInterval(timer);
+      pollRequest.current++;
+      pollAbort.current?.abort();
       unsubscribe();
+      visibility();
+      document.removeEventListener("visibilitychange", pageVisibility);
     };
   }, [available, refresh]);
   useEffect(() => {
@@ -179,6 +209,7 @@ export function SettingsApp() {
     const queued = createSettingsCommandQueue(
       async (command) => {
         operation.current = true;
+        pollAbort.current?.abort();
         revision.current++;
         setBusy(command.kind !== "save-settings");
         setPendingScope(settingsCommandScope(command));
@@ -357,12 +388,7 @@ export function SettingsApp() {
           </div>
         </main>
         {data && (
-          <SettingsChanges
-            data={data}
-            run={run}
-            t={t}
-            disabled={busy}
-          />
+          <SettingsChanges data={data} run={run} t={t} disabled={busy} />
         )}
       </div>
     </div>

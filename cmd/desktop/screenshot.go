@@ -8,6 +8,7 @@ import (
 	"errors"
 	"image/png"
 	"net/url"
+	"runtime"
 	"time"
 
 	"github.com/egoist/mygo"
@@ -78,15 +79,21 @@ func screenshotChoiceNavigation(target, token string) (string, screenshotChoice,
 
 // Runs on the UI thread, only for a clicked link in the foreground chat page.
 func (p *panel) takeScreenshot(view *mygo.WebView, request screenshotRequest) {
-	p.takeScreenshotWithCapture(view, request, screenshotCapture{
+	capture := screenshotCapture{
 		permission:   screencapture.RequestPermission,
 		displays:     screencapture.CaptureDisplays,
 		systemPicker: screencapture.SystemPicker(),
-	})
+	}
+	if runtime.GOOS == "darwin" {
+		capture.authorize = desktopScreenshotPermission
+		capture.permission = func() bool { return true }
+	}
+	p.takeScreenshotWithCapture(view, request, capture)
 }
 
 type screenshotCapture struct {
 	permission   func() bool
+	authorize    func(context.Context) error
 	displays     func(context.Context, []screencapture.Display) (*screencapture.Snapshot, error)
 	systemPicker bool
 }
@@ -100,6 +107,10 @@ func (p *panel) takeScreenshotWithCapture(view *mygo.WebView, request screenshot
 	}
 	if p.screenshotCancel != nil {
 		_ = desktopScreenshotResult.EmitPage(view.Page(), screenshotResult{Token: request.Token, Error: "A screenshot is already in progress"})
+		return
+	}
+	if capture.authorize != nil {
+		p.authorizeScreenshot(view, request, capture)
 		return
 	}
 	if !capture.permission() {
@@ -220,6 +231,74 @@ func (p *panel) takeScreenshotWithCapture(view *mygo.WebView, request screenshot
 			if !view.IsDestroyed() {
 				_ = desktopScreenshotResult.EmitPage(view.Page(), result)
 			}
+		})
+	}()
+}
+
+// The permission guide must run off the UI thread. Its worker closes done
+// before dispatching, so quitting never waits for a queued UI callback.
+func (p *panel) authorizeScreenshot(view *mygo.WebView, request screenshotRequest, capture screenshotCapture) {
+	ctx, cancel := context.WithTimeout(context.Background(), 2*time.Minute)
+	done := make(chan struct{})
+	p.screenshotCancel, p.screenshotDone = cancel, done
+	p.screenshotAuthorizing = true
+	go func() {
+		err := capture.authorize(ctx)
+		if err == nil {
+			err = ctx.Err()
+		}
+		cancel()
+		close(done)
+		p.window.Update(func() {
+			if p.quitting || p.screenshotDone != done {
+				return
+			}
+			p.screenshotCancel, p.screenshotDone = nil, nil
+			p.screenshotAuthorizing = false
+			if err != nil {
+				result := screenshotResult{Token: request.Token}
+				if !errors.Is(err, context.Canceled) {
+					result.Error = err.Error()
+				}
+				if !view.IsDestroyed() {
+					_ = desktopScreenshotResult.EmitPage(view.Page(), result)
+				}
+				return
+			}
+			capture.authorize = nil
+			p.takeScreenshotWithCapture(view, request, capture)
+		})
+	}()
+}
+
+// PermissionFlow destroys its native guide on the UI thread before returning.
+// Keep that thread pumping while canceled screenshot work finishes; OnQuit may
+// only wait after done is closed, otherwise the guide and quit wait on each other.
+func (p *panel) deferQuitForScreenshot(event *mygo.QuitEvent) {
+	if p.screenshotCancel == nil {
+		return
+	}
+	p.screenshotCancel()
+	p.closeScreenshotWindows()
+	if event.SessionEnding {
+		return
+	}
+	select {
+	case <-p.screenshotDone:
+		return
+	default:
+	}
+	event.PreventDefault()
+	if p.screenshotQuitPending {
+		return
+	}
+	p.screenshotQuitPending = true
+	done := p.screenshotDone
+	go func() {
+		<-done
+		p.window.Update(func() {
+			p.screenshotQuitPending = false
+			mygo.App.Quit()
 		})
 	}()
 }

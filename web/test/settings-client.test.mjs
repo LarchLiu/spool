@@ -3,6 +3,7 @@ import test from "node:test";
 import {
   hasSettingsBridge,
   settingsCall,
+  settingsCallWith,
   subscribeSettingsSection,
   newPerson,
   newProject,
@@ -86,6 +87,25 @@ test("native navigation accepts only known settings sections", (t) => {
   assert.deepEqual(selected, settingsSections);
   off();
   assert.equal(removed, true);
+});
+
+test("cancelable reads reach the native context without canceling committed commands", async (t) => {
+  const calls = [];
+  mockRuntime(t, {
+    call: async (...args) => { calls.push(args); return true; },
+    callWith(method, args, { signal }) {
+      calls.push([method, ...args]);
+      return new Promise((resolve, reject) => signal.addEventListener("abort", () => reject(signal.reason), { once: true }));
+    },
+    on() {},
+  });
+  const abort = new AbortController();
+  const request = settingsCallWith({ signal: abort.signal }, "Snapshot");
+  abort.abort(new Error("settings closed"));
+  await assert.rejects(request, /settings closed/);
+  await assert.rejects(settingsCallWith({ signal: abort.signal }, "Snapshot"), /settings closed/);
+  await settingsCall("Execute", { kind: "stop-service" });
+  assert.deepEqual(calls, [["DesktopSettings.Snapshot"], ["DesktopSettings.Execute", { kind: "stop-service" }]]);
 });
 
 test("new entities do not share mutable state or passwords", () => {

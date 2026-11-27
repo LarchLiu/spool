@@ -154,6 +154,7 @@ try {
     window.trustRequests = requests;
     window.calls = [];
     window.mygo = {
+      callWith(method, args, { signal } = {}) { signal?.throwIfAborted(); return this.call(method, ...args); },
       on() {},
       async call(method, ...args) {
         window.calls.push([method, ...args]);

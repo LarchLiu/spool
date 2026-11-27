@@ -133,6 +133,9 @@ func (probe *desktopServerStartupProbe) run(p *panel, report string, result chan
 		})
 	}
 	if err == nil {
+		err = probe.verifySessionMigration(ctx, p)
+	}
+	if err == nil {
 		verified := make(chan error, 1)
 		p.window.Update(func() {
 			server := probe.profiles[0]
@@ -188,7 +191,7 @@ func (probe *desktopServerStartupProbe) run(p *panel, report string, result chan
 		}
 	}
 	if err == nil {
-		body, _ := json.Marshal(map[string]any{"scope": "server-startup", "native": true, "dev_frontend": p.devFrontend != nil, "saved_profiles": true, "background_signed_in": true, "background_signed_out": true, "first_socket_retry_preserved": true, "startup_failure_recovery": true, "disabled_requests": probe.requests[3].Load(), "selection_preserved": true})
+		body, _ := json.Marshal(map[string]any{"scope": "server-startup", "native": true, "dev_frontend": p.devFrontend != nil, "saved_profiles": true, "background_signed_in": true, "background_signed_out": true, "first_socket_retry_preserved": true, "startup_failure_recovery": true, "disabled_requests": probe.requests[3].Load(), "selection_preserved": true, "cookie_migration": true, "session_isolation": persistentDesktopSessions()})
 		err = os.WriteFile(report, body, 0600)
 	}
 	if err != nil {
@@ -200,4 +203,52 @@ func (probe *desktopServerStartupProbe) run(p *panel, report string, result chan
 	}
 	result <- err
 	mygo.App.Quit()
+}
+
+func (probe *desktopServerStartupProbe) verifySessionMigration(ctx context.Context, p *panel) error {
+	if !persistentDesktopSessions() {
+		return nil
+	}
+	var first, second *desktopServerChat
+	if err := p.rendererSmokeUI(ctx, func() error {
+		first, second = p.serverChats[probe.profiles[0].ID], p.serverChats[probe.profiles[1].ID]
+		if first.session == second.session || first.session == mygo.DefaultSession() || second.session == mygo.DefaultSession() || p.serverChats[localDesktopServer].session != mygo.DefaultSession() {
+			return fmt.Errorf("server sessions lost account isolation")
+		}
+		return nil
+	}); err != nil {
+		return err
+	}
+	filter := mygo.CookieFilter{URL: first.address, Path: desktopServerMount(probe.profiles[0])}
+	legacy, err := mygo.Cookies.List(filter)
+	if err != nil {
+		return err
+	}
+	for _, cookie := range legacy {
+		if strings.HasSuffix(cookie.Name, "spool_session") {
+			return fmt.Errorf("migrated login remained in the default cookie store")
+		}
+	}
+	current, err := first.session.Cookies.List(filter)
+	if err != nil {
+		return err
+	}
+	matched := false
+	for _, cookie := range current {
+		matched = matched || cookie.Value == probe.token && cookie.HTTPOnly
+	}
+	if !matched {
+		return fmt.Errorf("existing login was not migrated into its native session")
+	}
+	// Both pages use the same gateway origin. The same unprefixed key must be
+	// isolated by the native data store, independently of our path namespacing.
+	if _, err := first.view.Page().EvalContext(ctx, `localStorage.setItem('spool-session-smoke', 'first');`); err != nil {
+		return err
+	}
+	defer first.view.Page().EvalContext(ctx, `localStorage.removeItem('spool-session-smoke');`)
+	value, err := second.view.Page().EvalContext(ctx, `localStorage.getItem('spool-session-smoke') === null`)
+	if err != nil || value != true {
+		return fmt.Errorf("native sessions shared localStorage: %v %v", value, err)
+	}
+	return nil
 }

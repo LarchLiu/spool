@@ -50,7 +50,7 @@ let failDecision = false;
 let unregisterCalls = 0;
 let checks = 0;
 let devices = { devices: [], pending: [] };
-window.mygo = { on: () => () => {}, call: async (method, ...args) => {
+window.mygo = { callWith(method, args, { signal } = {}) { signal?.throwIfAborted(); return this.call(method, ...args); }, on: () => () => {}, call: async (method, ...args) => {
   calls.push({ method, args });
   if (method === 'DesktopSettings.RegisterRelay') return new Promise((resolve, reject) => { completeRegistration = resolve; rejectRegistration = reject; });
   if (method === 'DesktopSettings.RelayPairing') {

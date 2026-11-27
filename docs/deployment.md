@@ -5,6 +5,8 @@
 This guide covers installation, service setup, Web/PWA access, Tailscale, and
 voxl remote desktop. Commands using `./build/` paths assume the repository root.
 For source builds, see the [README](../README.md#development).
+For signed Desktop updates and compatibility between releases, see
+[Desktop updates](desktop-updates.md).
 
 ## Linux release installation
 

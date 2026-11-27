@@ -306,7 +306,7 @@ jobs:
   smoke:
     name: Run ${{ matrix.target }} package
     needs: [prepare, build]
-    timeout-minutes: 10
+    timeout-minutes: 20
     strategy:
       fail-fast: false
       matrix:
@@ -333,6 +333,9 @@ jobs:
       - name: Test smoke extraction and scratch cleanup
         shell: bash
         run: bun test tools/test-scratch.test.mjs tools/smoke-archive.test.mjs
+      - uses: actions/setup-go@d8cbb8045d7f43706b9177cceb36c1f91a6644d5 # v7.1.0
+        with:
+          go-version-file: go.mod
       - name: Run headless server without a display
         env:
           RELEASE_TAG: ${{ env.RELEASE_TAG }}
@@ -371,6 +374,18 @@ jobs:
             xvfb-run -a dbus-run-session -- bun tools/smoke-release.mjs smoke-assets "$TARGET"
           else
             bun tools/smoke-release.mjs smoke-assets "$TARGET"
+          fi
+      - name: Verify signed upgrade replacement and native relaunch
+        env:
+          SPOOL_UPDATER_E2E: '1'
+          LIBGL_ALWAYS_SOFTWARE: '1'
+        shell: bash
+        run: |
+          set -euo pipefail
+          if [[ "$RUNNER_OS" == Linux ]]; then
+            xvfb-run -a dbus-run-session -- sh tools/run.sh updater-e2e go test -v -timeout=5m ./internal/appupdate -run '^TestMyGoUpgradeReplacesApplicationAndPreservesUserData$'
+          else
+            sh tools/run.sh updater-e2e go test -v -timeout=5m ./internal/appupdate -run '^TestMyGoUpgradeReplacesApplicationAndPreservesUserData$'
           fi
       - name: Keep smoke diagnostics
         if: always()

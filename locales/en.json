@@ -1468,6 +1468,7 @@
   "A screenshot is already in progress": "A screenshot is already in progress",
   "Could not read the screenshot": "Could not read the screenshot",
   "The screenshot timed out. Try again.": "The screenshot timed out. Try again.",
+  "Screen recording permission is required. Allow Spool in System Settings, then restart Spool and try again.": "Screen recording permission is required. Allow Spool in System Settings, then restart Spool and try again.",
   "Click a window · Drag to select an area": "Click a window · Drag to select an area",
   "Drag edges or corners to resize": "Drag edges or corners to resize",
   "Select screenshot": "Select screenshot",

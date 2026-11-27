@@ -42,7 +42,7 @@ const startCheck = preflight => {
     if(!preflight && !fail) data = {...data,settings:{...data.settings,web_detected_origin:check.PublicURL,web_detected_proxy:'172.18.0.3/32'}};
   };
 };
-window.mygo = {locale:'zh-CN',on:()=>()=>{}, call:async(method,...args)=>{
+window.mygo = {callWith(method, args, { signal } = {}) { signal?.throwIfAborted(); return this.call(method, ...args); }, locale:'zh-CN',on:()=>()=>{}, call:async(method,...args)=>{
   if(method === 'DesktopSettings.Snapshot') return structuredClone(data);
   if(method === 'DesktopSettings.CancelWebProxyDetection') {
     if(data.status.WebProxyCheck?.ID !== args[0]) return true;

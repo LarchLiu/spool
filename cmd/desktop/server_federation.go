@@ -80,12 +80,25 @@ type desktopFederationCookies interface {
 	Set(mygo.Cookie) error
 }
 
-type desktopWebViewCookies struct{}
+type desktopWebViewCookies struct{ mounts map[string]mygo.CookiesModule }
 
-func (desktopWebViewCookies) List(address string) ([]mygo.Cookie, error) {
-	return mygo.Cookies.List(mygo.CookieFilter{URL: address})
+func (s desktopWebViewCookies) store(path string) mygo.CookiesModule {
+	for mount, store := range s.mounts {
+		if strings.HasPrefix(path, mount) {
+			return store
+		}
+	}
+	return mygo.Cookies
 }
-func (desktopWebViewCookies) Set(cookie mygo.Cookie) error { return mygo.Cookies.Set(cookie) }
+
+func (s desktopWebViewCookies) List(address string) ([]mygo.Cookie, error) {
+	u, err := url.Parse(address)
+	if err != nil {
+		return nil, err
+	}
+	return s.store(u.Path).List(mygo.CookieFilter{URL: address})
+}
+func (s desktopWebViewCookies) Set(cookie mygo.Cookie) error { return s.store(cookie.Path).Set(cookie) }
 
 type desktopFederation struct {
 	attempt *desktopFederationAttempt
@@ -493,7 +506,13 @@ func (p *panel) desktopFederationCookies() desktopFederationCookies {
 	if p.federation.cookies != nil {
 		return p.federation.cookies
 	}
-	return desktopWebViewCookies{}
+	stores := make(map[string]mygo.CookiesModule)
+	for _, server := range p.servers.Entries {
+		if server.ID != localDesktopServer {
+			stores[desktopServerMount(server)] = p.desktopServerSession(server).Cookies
+		}
+	}
+	return desktopWebViewCookies{mounts: stores}
 }
 
 // 网络请求和 Cookie 读取在后台执行；面板状态只在 UI 回调中更新。

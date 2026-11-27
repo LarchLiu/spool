@@ -98,6 +98,7 @@ try {
     window.savedPeople = [];
     window.deletedPeople = [];
     window.mygo = {
+      callWith(method, args, { signal } = {}) { signal?.throwIfAborted(); return this.call(method, ...args); },
       on: () => () => {},
       async call(method, command) {
         if (method === "DesktopSettings.Snapshot") return structuredClone(data);

@@ -37,6 +37,7 @@ const refreshPending = () => {
 };
 window.smokeSettings = { snapshot, commands: [], snapshots: 0, executes: 0, sectionListeners: [] };
 window.mygo = {
+  callWith(method, args, { signal } = {}) { signal?.throwIfAborted(); return this.call(method, ...args); },
   on(event, listener) {
     if (event === "spool:settings-section") window.smokeSettings.sectionListeners.push(listener);
     return () => {};

@@ -47,6 +47,21 @@ try {
         window.fixtureCalls = [];
         window.fixtureCreated = 0;
         window.mygo = {
+          callWith(method, args, { signal } = {}) {
+            signal?.throwIfAborted();
+            if (method === "DesktopServers.Snapshot" && window.fixtureHoldSnapshot) {
+              window.fixtureHoldSnapshot = false;
+              window.fixturePendingSnapshot = true;
+              return new Promise((resolve, reject) => {
+                window.fixtureFinishSnapshot = () => resolve(structuredClone(window.fixtureServer));
+                signal.addEventListener("abort", () => {
+                  window.fixtureSnapshotCanceled = true;
+                  reject(signal.reason);
+                }, { once: true });
+              });
+            }
+            return this.call(method, ...args);
+          },
           platform: "darwin", locale: "en", on: () => () => {},
           async call(method, ...args) {
             window.fixtureCalls.push([method, ...structuredClone(args)]);
@@ -191,8 +206,21 @@ try {
       await name.fill("Renamed trusted Relay"); await name.press("Enter");
       await page.waitForFunction(() => window.fixtureServer.server.name === "Renamed trusted Relay");
       assert.equal(await page.evaluate(() => window.fixtureServer.server.federation_relay), true);
+      await page.evaluate(() => { window.fixtureHoldSnapshot = true; });
+      await page.waitForFunction(() => window.fixturePendingSnapshot);
+      await page.evaluate(() => window.dispatchEvent(new CustomEvent("spool:server-dialog-visible", { detail: false })));
+      await page.waitForFunction(() => window.fixtureSnapshotCanceled);
+      await page.evaluate(() => {
+        window.fixtureFinishSnapshot();
+        const next = structuredClone(window.fixtureServer);
+        next.server.name = "Reopened after canceled read";
+        window.fixtureServer = next;
+        window.dispatchEvent(new CustomEvent("spool:server-dialog", { detail: next }));
+      });
+      await page.getByRole("heading", { name: "Reopened after canceled read · Settings", exact: true }).waitFor();
+      assert.equal(await page.getByRole("alert").count(), 0, "canceling a hidden read does not show an error or overwrite the reopened server");
       assert.deepEqual(errors, []);
-      console.log(`${engine}: remote server autosave, retry, isolation, Android layout and sizing checks passed`);
+      console.log(`${engine}: remote server autosave, retry, request cancellation, isolation, Android layout and sizing checks passed`);
     } catch (error) {
       console.error(engine, await page.evaluate(() => ({ server: window.fixtureServer, calls: window.fixtureCalls.slice(-5) })));
       await page.screenshot({ path: path.join(output, `${engine}-failure.png`) });

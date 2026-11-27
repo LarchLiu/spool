@@ -41,6 +41,7 @@ type panel struct {
 	attachmentDropPending  bool
 	screenshotCancel       context.CancelFunc
 	screenshotDone         <-chan struct{}
+	screenshotAuthorizing  bool
 	screenshotWindows      []*mygo.Window
 	screenshotEditor       *screenshotEditorSession
 	attachmentDragView     *mygo.WebView
@@ -52,6 +53,8 @@ type panel struct {
 	serversPath            string
 	serverGateway          *desktopServerGateway
 	serverChats            map[string]*desktopServerChat
+	serverSessions         map[string]*mygo.Session
+	sessionsEphemeral      bool
 	serverTabTransition    *desktopTabTransition
 	chatGeneration         uint64
 	serverNetworks         *desktopServerNetworks
@@ -63,6 +66,8 @@ type panel struct {
 	serverDialogHeight     float32
 	serverPairing          *spoolnet.PairingSession
 	quitting               bool
+	screenshotQuitPending  bool
+	backgroundActivity     desktopBackgroundActivity
 	tray                   *mygo.Tray
 	logo                   *ui.Bitmap
 	preferences            workspace.UIPreferences
@@ -223,7 +228,7 @@ func runDesktop() (runErr error) {
 		return err
 	}
 	defer devFrontend.close()
-	p := &panel{service: service, devFrontend: devFrontend, tab: "Service", project: workspace.Project{AllowExternalFiles: true}, members: map[string]bool{}, agentPaths: map[chatmodel.Backend]string{}, agentEnabled: map[chatmodel.Backend]bool{}}
+	p := &panel{service: service, devFrontend: devFrontend, sessionsEphemeral: *smoke != "", tab: "Service", project: workspace.Project{AllowExternalFiles: true}, members: map[string]bool{}, agentPaths: map[chatmodel.Backend]string{}, agentEnabled: map[chatmodel.Backend]bool{}}
 	var startupProbe *desktopServerStartupProbe
 	if *smokeProbe == "server-startup" {
 		startupProbe, err = prepareDesktopServerStartupProbe(p)
@@ -271,7 +276,11 @@ func runDesktop() (runErr error) {
 		if p.screenshotCancel != nil {
 			p.closeScreenshotWindows()
 			p.screenshotCancel()
-			<-p.screenshotDone
+			// A normal quit has already awaited this off the UI thread. OS
+			// session termination cannot defer quit or wait for native UI cleanup.
+			if !p.screenshotAuthorizing {
+				<-p.screenshotDone
+			}
 		}
 		if p.notificationEvents != nil {
 			p.notificationEvents.Close()
@@ -296,15 +305,17 @@ func runDesktop() (runErr error) {
 		if p.updateRelease != nil {
 			p.updateRelease()
 		}
+		p.backgroundActivity.close()
 	})
 	mygo.App.OnBeforeQuit(func(e *mygo.QuitEvent) {
-		if p.updates.State().Installing {
+		if p.updates.State().Installing && !e.SessionEnding {
 			e.PreventDefault()
 			p.showUpdates()
 			p.message = "Wait for the update to finish before quitting."
 			return
 		}
 		p.quitting = true
+		p.deferQuitForScreenshot(e)
 	})
 	mygo.App.OnNotificationClick(p.openSystemNotification)
 	mygo.App.WhenReady(func() {
@@ -344,6 +355,7 @@ func runDesktop() (runErr error) {
 			p.openChat()
 		}
 		p.connectEnabledDesktopServers()
+		p.refreshBackgroundActivity()
 		p.refreshGitHubCLI()
 		p.window.OnClose(func(e *mygo.CloseEvent) {
 			if !p.quitting {
@@ -409,6 +421,7 @@ func runDesktop() (runErr error) {
 					projects, _ := service.Store.Projects()
 					p.window.Update(func() {
 						p.status, p.agents, p.projects = status, agents, projects
+						p.refreshBackgroundActivity()
 						p.sendUpdateAvailability(p.chatView)
 						p.checkDesktopServerHealth()
 						p.advanceDesktopFederation()
@@ -450,6 +463,7 @@ func (p *panel) load() {
 	p.projects, _ = p.service.Store.Projects()
 	p.agents, _ = p.service.Store.Agents()
 	p.status = p.service.Status()
+	p.refreshBackgroundActivity()
 	p.updatePreferences, _ = p.service.Store.UpdatePreferences()
 	p.githubPath, _ = p.service.Store.GitHubCLIPath()
 	for _, a := range p.agents {

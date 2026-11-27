@@ -28,21 +28,39 @@ export function serverDialogInitialSnapshot():
   ).spoolServerDialog;
 }
 
+type ServerDialogMethod =
+  | "Snapshot"
+  | "Ready"
+  | "Save"
+  | "Disconnect"
+  | "Delete"
+  | "Close"
+  | "TailscaleLogin"
+  | "PairRelay";
+
 export function serverDialogCall<T>(
-  method:
-    | "Snapshot"
-    | "Ready"
-    | "Save"
-    | "Disconnect"
-    | "Delete"
-    | "Close"
-    | "TailscaleLogin"
-    | "PairRelay",
+  method: ServerDialogMethod,
   ...args: unknown[]
 ): Promise<T> {
+  return serverDialogCallWith<T>({}, method, ...args);
+}
+
+export function serverDialogCallWith<T>(
+  options: { signal?: AbortSignal },
+  method: ServerDialogMethod,
+  ...args: unknown[]
+): Promise<T> {
+  if (options.signal?.aborted) return Promise.reject(options.signal.reason);
   const runtime = (
     globalThis as typeof globalThis & {
-      mygo?: { call: <T>(method: string, ...args: unknown[]) => Promise<T> };
+      mygo?: {
+        call: <T>(method: string, ...args: unknown[]) => Promise<T>;
+        callWith?: <T>(
+          method: string,
+          args: unknown[],
+          options: { signal?: AbortSignal },
+        ) => Promise<T>;
+      };
     }
   ).mygo;
   if (!runtime?.call)
@@ -51,5 +69,12 @@ export function serverDialogCall<T>(
         "Desktop settings are only available in the Spool desktop app.",
       ),
     );
+  if (options.signal) {
+    if (!runtime.callWith)
+      return Promise.reject(
+        new Error("This desktop runtime does not support canceling calls."),
+      );
+    return runtime.callWith<T>(`DesktopServers.${method}`, args, options);
+  }
   return runtime.call<T>(`DesktopServers.${method}`, ...args);
 }

@@ -25,6 +25,9 @@ const desktopSidebarWidthPath = "/__desktop/sidebar-width"
 
 type desktopServerChat struct {
 	view             *mygo.WebView
+	session          *mygo.Session
+	sessionReady     bool
+	sessionPreparing bool
 	remoteDesktop    *mygo.Window
 	address          string
 	loaded           bool
@@ -250,6 +253,7 @@ func (p *panel) recordDesktopFederationTargets(chat *desktopServerChat, targets 
 }
 
 func (p *panel) sendDesktopServers() {
+	p.refreshBackgroundActivity()
 	for id, chat := range p.serverChats {
 		p.syncRemoteDesktopTitle(id, chat)
 		if chat.view != nil {
@@ -383,6 +387,9 @@ func (p *panel) selectDesktopServerEntry(id string, scrollLeft *float64, alias s
 	previousTransition, previousAlias := p.serverTabTransition, p.federation.selectedTab
 	p.federation.selectedTab = alias
 	if previous := p.selectedDesktopServer(); previous != id || previousAlias != alias {
+		if p.screenshotCancel != nil {
+			p.screenshotCancel()
+		}
 		started := time.Now().UnixMilli()
 		if previousTransition != nil && started <= previousTransition.StartedAt {
 			started = previousTransition.StartedAt + 1

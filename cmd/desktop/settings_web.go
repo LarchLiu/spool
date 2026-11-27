@@ -11,6 +11,7 @@ import (
 	"time"
 
 	"github.com/egoist/mygo"
+	"github.com/egoist/mygo/transfer"
 
 	"spool"
 	"spool/internal/appupdate"
@@ -24,6 +25,7 @@ import (
 const settingsPageURL = "mygo://localhost/desktop.html"
 
 var settingsSection = mygo.NewEvent[string]("spool:settings-section")
+var settingsVisibility = mygo.NewEvent[bool]("spool:settings-visible")
 
 func desktopVersion() string {
 	if version := mygo.App.Version(); version != "" {
@@ -181,6 +183,7 @@ func (p *panel) loadSettingsView() error {
 		p.settingsFailed = false
 		p.sendWindowChrome(view)
 		p.sendDesktopAppearance(view)
+		_ = settingsVisibility.EmitPage(page, p.tab != "Chat")
 		if p.tab != "Chat" {
 			view.Focus()
 		}
@@ -565,13 +568,17 @@ func (s *desktopSettings) Action(ctx context.Context, command settingsCommand) (
 			if command.Text == "" {
 				return false, errors.New("Could not copy code")
 			}
-			mygo.Clipboard.WriteText(command.Text)
+			if err := mygo.Clipboard.Write(transfer.TextData(command.Text), mygo.ClipboardOptions{Concealed: true}); err != nil {
+				return false, err
+			}
 		case "copy-server-trust-relay-route":
 			code, err := p.service.Store.FederationRelayRoute()
 			if err != nil {
 				return false, err
 			}
-			mygo.Clipboard.WriteText(code)
+			if err := mygo.Clipboard.Write(transfer.TextData(code), mygo.ClipboardOptions{Concealed: true}); err != nil {
+				return false, err
+			}
 		case "copy-server-trust-id":
 			id, err := p.service.Store.FederationIdentity()
 			if err != nil {

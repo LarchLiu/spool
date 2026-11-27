@@ -17,6 +17,39 @@ import (
 	"spool/internal/screencapture"
 )
 
+// Model PermissionFlow's cancellation cleanup without opening System Settings
+// or requesting access. Quitting must leave the UI thread available for cleanup.
+func (p *panel) prepareScreenshotPermissionQuitProbe(ctx context.Context, finish func(error)) error {
+	started := make(chan struct{})
+	cleaned := false // Written and checked only on the native UI thread.
+	if err := p.rendererSmokeUI(ctx, func() error {
+		p.authorizeScreenshot(p.chatView, screenshotRequest{Token: "permission-quit-probe"}, screenshotCapture{
+			authorize: func(ctx context.Context) error {
+				close(started)
+				<-ctx.Done()
+				mygo.RunOnMain(func() { cleaned = true })
+				return ctx.Err()
+			},
+		})
+		mygo.App.OnQuit(func() {
+			if !cleaned {
+				finish(fmt.Errorf("permission worker did not finish UI cleanup before quit"))
+				return
+			}
+			finish(nil)
+		})
+		return nil
+	}); err != nil {
+		return err
+	}
+	select {
+	case <-started:
+		return nil
+	case <-ctx.Done():
+		return ctx.Err()
+	}
+}
+
 // Exercise the owned native panel and event bridge with a synthetic screen.
 // This probe never captures or retains pixels from the developer's desktop.
 func (p *panel) probeScreenshotSelection(ctx context.Context, report string) error {
@@ -110,7 +143,7 @@ root.dispatchEvent(new PointerEvent('pointermove',{bubbles:true,clientX:200,clie
 		return fmt.Errorf("expired screenshot source token accepted: %w", err)
 	}
 	if err := editSmokeScreenshot(ctx, overlay.Page(), "region", 200, 140); err != nil {
-		return err
+		return fmt.Errorf("initial screenshot editor: %w", err)
 	}
 	select {
 	case <-ctx.Done():
@@ -138,13 +171,13 @@ document.addEventListener('click', event=>{
  if(link){event.preventDefault();window.smokeScreenshotToken=new URL(link.href).searchParams.get('token');}
 },{capture:true,once:true});
 `); err != nil {
-		return err
+		return fmt.Errorf("open screenshot options: %w", err)
 	}
 	if err := waitChatScript(ctx, page, `return !!document.querySelector('.screenshot-options:not([hidden]) a');`); err != nil {
 		return err
 	}
 	if _, err := page.EvalContext(ctx, `document.querySelector('.screenshot-options a').click();`); err != nil {
-		return err
+		return fmt.Errorf("select screenshot option: %w", err)
 	}
 	if err := waitChatScript(ctx, page, `return !!window.smokeScreenshotToken && document.querySelector('.composer-screenshot button')?.disabled;`); err != nil {
 		return err
@@ -167,9 +200,12 @@ document.addEventListener('click', event=>{
 		return err
 	}
 	if err := p.probeScreenshotNavigation(ctx); err != nil {
-		return err
+		return fmt.Errorf("screenshot navigation: %w", err)
 	}
-	return p.probeScreenshotVisibility(ctx, report)
+	if err := p.probeScreenshotVisibility(ctx, report); err != nil {
+		return fmt.Errorf("screenshot visibility: %w", err)
+	}
+	return nil
 }
 
 // Match the production capture contract: one frozen image and window target
@@ -317,7 +353,7 @@ document.addEventListener('click',event=>{
 				}
 			}
 			overlay := overlays[len(overlays)-1]
-			if _, err := overlay.Page().EvalContext(ctx, `location.assign('mygo://app/__screenshot?'+new URLSearchParams({token:window.spoolScreenshot.token,action:'cancel'}));`); err != nil {
+			if _, err := overlay.Page().EvalContext(ctx, `setTimeout(() => location.assign('mygo://app/__screenshot?'+new URLSearchParams({token:window.spoolScreenshot.token,action:'cancel'})), 0);`); err != nil {
 				return err
 			}
 			if err := waitChatScript(ctx, page, `return !document.querySelector('.composer-screenshot button').disabled && window.smokeScreenshotReplies.length===1;`); err != nil {
@@ -371,7 +407,7 @@ document.addEventListener('click',event=>{
 		}
 		timings = append(timings, startupTiming{step.visibility, step.action, captureStartState.at.Sub(started).Milliseconds(), time.Since(started).Milliseconds(), len(displays), displayIndex + 1})
 		if step.action == "cancel" {
-			if _, err := overlay.Page().EvalContext(ctx, `location.assign('mygo://app/__screenshot?'+new URLSearchParams({token:window.spoolScreenshot.token,action:'cancel'}));`); err != nil {
+			if _, err := overlay.Page().EvalContext(ctx, `setTimeout(() => location.assign('mygo://app/__screenshot?'+new URLSearchParams({token:window.spoolScreenshot.token,action:'cancel'})), 0);`); err != nil {
 				return err
 			}
 		} else if err := editSmokeScreenshot(ctx, overlay.Page(), step.action, 100, 100); err != nil {
@@ -450,7 +486,9 @@ pointer('pointerdown',170,140);pointer('pointermove',210,170);pointer('pointerup
 	if err := waitChatScript(ctx, page, `return !document.querySelector('button[data-action="undo"]').disabled;`); err != nil {
 		return err
 	}
-	_, err := page.EvalContext(ctx, `document.querySelector('.capture-confirm').click();`)
+	// Completing closes this page. Let Eval settle before the click so the
+	// probe observes the resulting choice instead of racing page destruction.
+	_, err := page.EvalContext(ctx, `setTimeout(() => document.querySelector('.capture-confirm').click(), 0);`)
 	return err
 }
 

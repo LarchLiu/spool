@@ -42,7 +42,7 @@ const plugin = {
       description_prompts: {project: {default: "Built-in project prompt", value: "Saved project prompt"}, agent: {default: "Built-in agent prompt", value: "Saved agent prompt"}},
     };
     window.calls = [];
-    window.mygo = {on() {}, async call(method, request) {
+    window.mygo = {callWith(method, args, { signal } = {}) { signal?.throwIfAborted(); return this.call(method, ...args); }, on() {}, async call(method, request) {
       window.calls.push([method, request]);
       if (method === "DesktopSettings.CancelDescriptionSummary") return true;
       if (window.summaryError) throw new Error(window.summaryError);

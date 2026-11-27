@@ -62,6 +62,10 @@ input, so typing can continue immediately. On macOS, both visibility actions req
 recording permission. If macOS requests it, allow Spool in
 **System Settings → Privacy & Security → Screen & System Audio Recording** (the
 label varies by macOS version). Restart Spool if macOS asks you to, then retry.
+When permission is missing, Spool opens the relevant System Settings page with
+a guide showing the app to authorize. Closing that guide reports the permission
+requirement in the chat; changing the workspace or quitting cancels the pending
+guide. Permission checks and guidance run off the UI thread before capture starts.
 Accessibility permission is not required. The screenshot is captured on the
 computer running the desktop client, including when the chat connects to a
 remote Spool server. Only the chosen image is uploaded when the message is sent.

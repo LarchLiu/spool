@@ -15,6 +15,7 @@ import (
 const serverDialogURL = "mygo://localhost/servers.html"
 
 var serverDialogChanged = mygo.NewEvent[desktopServerSnapshot]("spool:server-dialog")
+var serverDialogVisibility = mygo.NewEvent[bool]("spool:server-dialog-visible")
 
 type desktopServerSettings struct{ panel *panel }
 
@@ -78,6 +79,9 @@ func (p *panel) prepareServerDialog() {
 window.mygo.on("spool:server-dialog", value => {
   window.spoolServerDialog = value;
   window.dispatchEvent(new CustomEvent("spool:server-dialog", {detail: value}));
+});
+window.mygo.on("spool:server-dialog-visible", value => {
+  window.dispatchEvent(new CustomEvent("spool:server-dialog-visible", {detail: value}));
 });`
 	dialog, err := p.window.NewWebView(options)
 	if err != nil {
@@ -155,6 +159,9 @@ func (p *panel) revealServerDialog() {
 }
 
 func (p *panel) hideServerDialog() {
+	if p.serverDialog != nil {
+		_ = serverDialogVisibility.EmitPage(p.serverDialog.Page(), false)
+	}
 	wasOpen := p.serverDialogOpen || p.serverDialogRequested
 	p.serverDialogRequested = false
 	p.serverDialogOpen = false

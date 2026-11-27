@@ -63,6 +63,20 @@ even when they reach the same server. Switching back restores that mode's own
 session; signing out affects only that session. Changing an address starts with
 a separate session, and automatic switching may require signing in to that mode.
 
+On Windows, Linux, and macOS 14 or later, each remote route also owns a native
+WebView Session, isolating cookies, local storage, caches, and service workers.
+The remote desktop window uses that same Session. On the first launch after
+upgrading, Spool copies only the route's existing cookies before navigating,
+then removes the migrated copies from the default store. Completed migration
+is recorded so signing out does not import an old login again. The local account
+and its system notifications retain the existing default store. Earlier macOS
+versions retain gateway cookie/path isolation because named stores there do not
+persist between launches. Disposable smoke probes use memory-only Sessions.
+
+On macOS, Spool prevents App Nap while its local service runs or a workspace is
+connected/connecting, including when the window is hidden. It releases this
+activity when idle or quitting and still allows normal computer sleep.
+
 The chat's **Settings** button opens the selected remote server's connection
 dialog. It can edit, disable, or delete that profile. A disabled tab remains
 selectable and can be connected again from its sidebar. Local Settings continues
